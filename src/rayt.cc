@@ -141,8 +141,19 @@ struct scene_t {
 };
 
 struct char_ex_info_t {
-    char ch;
-    bool is_bold = false;
+    char ch = ' ';
+    int attr = 0;
+
+
+    char_ex_info_t& operator=(const char_ex_info_t& other) = default;
+
+    bool operator==(const char_ex_info_t& other) const {
+        return ch == other.ch && attr == other.attr;
+    }
+
+    bool operator!=(const char_ex_info_t& other) const {
+        return !(*this == other);
+    }
 };
 
 
@@ -180,37 +191,60 @@ int main() {
     const float x_mul = 1.0f;
     const float y_mul = 1.0f;
 
-    const float z_move_speed = 20.0f;
-    const float x_move_speed = 20.0f;
-    const float y_move_speed = 20.0f;
+    const float z_move_speed = 1.0f;
+    const float x_move_speed = 1.0f;
+    const float y_move_speed = 1.0f;
 
     scene_t scene;
-    scene.objects.push_back(obj_t{sphere_t{vec_t(0, 0, 30), 10.0f}, 0.1f});
+    scene.objects.push_back(obj_t{sphere_t{vec_t(0, 0, 30), 10.0f}, 0.01f});
     scene.lights.push_back(light_t{sphere_t{vec_t(0, 15, 30), 1.0f}, 50.0f});
     const vec_t light_orig_pos = scene.lights[0].sphere.pos;
 
     std::vector<vec_t> ipoints;
     std::map<float, char_ex_info_t> dist_to_chars;
+    std::vector<std::vector<char_ex_info_t>> buffer, last_buffer;
+    buffer.resize(LINES);
+    for (std::int32_t i = 0; i < LINES; i++) {
+        buffer[i].resize(COLS);
+    }
+    last_buffer = buffer;
     while (true) {
         while (get_current_time() - last_time < wait_us_per_frame) {;}
         last_time = get_current_time();
-        scene.lights[0].sphere.pos.x = light_orig_pos.x + 10 * std::cos((last_time - begin_time) / 1'000'000.0);
-        scene.lights[0].sphere.pos.z = light_orig_pos.z + 10 * std::sin((last_time - begin_time) / 1'000'000.0);
+
+        const std::int32_t this_height = LINES, this_width = COLS;
+
+        /* resize buffers as window size changes */
+        if (buffer.size() != this_height) {
+            buffer.resize(this_height);
+        }
+
+        if (buffer.size() > 0) {
+            if (buffer[0].size() != this_width) {
+                for (std::vector<char_ex_info_t>& line : buffer) {
+                    line.resize(this_width);
+                }
+            }
+        }
+
+        /* revolve the light source */
+        scene.lights[0].sphere.pos.x = light_orig_pos.x + 10 * std::cos(0.02f * (last_time - begin_time) / 1'000'000.0);
+        scene.lights[0].sphere.pos.z = light_orig_pos.z + 10 * std::sin(0.02f * (last_time - begin_time) / 1'000'000.0);
+
         chtype chin = wgetch(win);
         if (chin == '\t') { break; }
-        else if (chin == 'q') { camera_pos.y += wait_per_frame * y_move_speed; }
-        else if (chin == 'e') { camera_pos.y -= wait_per_frame * y_move_speed; }
-        else if (chin == 'w') { camera_pos.z += wait_per_frame * z_move_speed; }
-        else if (chin == 's') { camera_pos.z -= wait_per_frame * z_move_speed; }
-        else if (chin == 'd') { camera_pos.x += wait_per_frame * x_move_speed; }
-        else if (chin == 'a') { camera_pos.x -= wait_per_frame * x_move_speed; }
+        else if (chin == 'q') { camera_pos.y += y_move_speed; }
+        else if (chin == 'e') { camera_pos.y -= y_move_speed; }
+        else if (chin == 'w') { camera_pos.z += z_move_speed; }
+        else if (chin == 's') { camera_pos.z -= z_move_speed; }
+        else if (chin == 'd') { camera_pos.x += x_move_speed; }
+        else if (chin == 'a') { camera_pos.x -= x_move_speed; }
 
-        for (std::int32_t i = 0; i < LINES; i++) {
-            for (std::int32_t j = 0; j < COLS / 2.0f; j++) {
+        for (std::int32_t i = 0; i < this_height; i++) {
+            for (std::int32_t j = 0; j < this_width / 2.0f; j++) {
                 /* position for i is flipped since ncurses says y down is positive while we want y up is positive */
-                vec_t curpos = vec_t((j - COLS / 4.0f) * x_mul, (-i + LINES / 2.0f) * y_mul, begin_draw_dist);
+                vec_t curpos = vec_t((j - this_width / 4.0f) * x_mul, (-i + this_height / 2.0f) * y_mul, begin_draw_dist);
                 line_t ray = between(camera_pos, camera_pos + curpos);
-                char out = ' ';
                 dist_to_chars.clear();
 
                 /* render spheres with appropriate lighting */
@@ -221,7 +255,6 @@ int main() {
                         vec_t sphere_minvec = *closest_vec(ipoints, camera_pos);
                         /* nonpermanent and bad solution for camera being in front of sphere */
                         if (sphere_minvec.z > camera_pos.z) {
-                            out = '.';
                             /* checking to make sure it is the visible intersection
                              * i.e. the closest intersect with sphere is equal or close
                              * enough to the closest intersect with light source */
@@ -245,7 +278,7 @@ int main() {
                             if (applied_light > 0.0f) {
                                 outch = get_gradient(gradient_length - applied_light);
                             }
-                            dist_to_chars[(camera_pos - sphere_minvec).mod()] = char_ex_info_t{outch, false};
+                            dist_to_chars[(camera_pos - sphere_minvec).mod()] = char_ex_info_t{outch, 0};
                         }
                     }
                 }
@@ -261,31 +294,47 @@ int main() {
 
                         /* nonpermanent and bad solution */
                         if (minvec.z > camera_pos.z) {
-                            dist_to_chars[(camera_pos - light.sphere.pos).mod()] = char_ex_info_t{get_gradient(light.strength), true};
+                            dist_to_chars[(camera_pos - light.sphere.pos).mod()] = char_ex_info_t{get_gradient(light.strength), A_BOLD};
                         }
                     }
                 }
 
                 if (dist_to_chars.empty()) {
-                    mvwaddch(win, i, j * 2, ' ');
-                    waddch(win, ' ');
+                    buffer[i][j] = char_ex_info_t{' ', 0};
                 } else {
-                    const char_ex_info_t outch = dist_to_chars.begin()->second;
-                    if (outch.is_bold) {
-                        wattron(win, A_BOLD);
-                    }
-                    mvwaddch(win, i, j * 2, outch.ch);
-                    waddch(win, outch.ch);
-                    if (outch.is_bold) {
-                        wattroff(win, A_BOLD);
-                    }
+                    buffer[i][j] = dist_to_chars.begin()->second;
                 }
             }
         }
 
+        std::vector<std::tuple<std::int32_t, std::int32_t, char>> updated_positions;
+        for (std::int32_t i = 0; i < buffer.size(); i++) {
+            for (std::int32_t j = 0; j < buffer[i].size(); j++) {
+                /* these ifs are separated so as not to rely on short circuiting */
+                if (i < last_buffer.size()) {
+                    if (j < last_buffer[i].size()) {
+                        if (buffer[i][j] != last_buffer[i][j]) {
+                            updated_positions.emplace_back(i, j, buffer[i][j].ch);
+                            wattron(win, buffer[i][j].attr);
+                            mvwaddch(win, i, j * 2, buffer[i][j].ch);
+                            waddch(win, buffer[i][j].ch);
+                            wattroff(win, buffer[i][j].attr);
+                        }
+                    }
+                }
+            }
+        }
+        last_buffer = buffer;
+
         mvwprintw(win, 0, 0, "x: %f", camera_pos.x);
         mvwprintw(win, 1, 0, "y: %f", camera_pos.y);
         mvwprintw(win, 2, 0, "z: %f", camera_pos.z);
+        std::int32_t cury = 2;
+        for (const auto& [x, y, ch] : updated_positions) {
+            if (cury >= LINES) { break; }
+            cury++;
+            mvwprintw(win, cury, 0, "%c, x: %i, y: %i", ch, x, y);
+        }
 
         wrefresh(win);
     }
