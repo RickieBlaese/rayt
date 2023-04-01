@@ -124,6 +124,7 @@ struct vec4_t {
     vec_t a, b;
 };
 
+/* acts like point light */
 struct light_t {
     sphere_t sphere;
     float strength = 0.0f;
@@ -151,7 +152,7 @@ std::uint64_t get_current_time() {
 
 
 int main() {
-    constexpr float fps = 240.0f;
+    constexpr float fps = 60.0f;
 
     const std::string gradient = ".._,'`^\"-~:;=l!i><+?|][}{)(\\/1trxnuvczjfXYUJICLQO0Zmwqpdbkhao*#MW&8%B@$";
     const std::int32_t gradient_length = gradient.length();
@@ -185,7 +186,7 @@ int main() {
 
     scene_t scene;
     scene.objects.push_back(obj_t{sphere_t{vec_t(0, 0, 30), 10.0f}, 0.1f});
-    scene.lights.push_back(light_t{sphere_t{vec_t(0, 18, 30), 1.0f}, 50.0f});
+    scene.lights.push_back(light_t{sphere_t{vec_t(0, 15, 30), 1.0f}, 50.0f});
     const vec_t light_orig_pos = scene.lights[0].sphere.pos;
 
     std::vector<vec_t> ipoints;
@@ -228,21 +229,21 @@ int main() {
                             for (const light_t& light : scene.lights) {
                                 ipoints.clear();
                                 const float dotp = (object.sphere.pos - sphere_minvec).normalized().dot((object.sphere.pos - light.sphere.pos).normalized());
-                                /* intersect(between(light.sphere.pos, sphere_minvec), object.sphere, ipoints); */
+                                intersect(between(light.sphere.pos, sphere_minvec), object.sphere, ipoints);
                                 /* guaranteed to intersect because by above line it goes through both light and sphere */
-                                /* vec_t lminvec;
+                                vec_t lminvec;
                                 if (ipoints.empty()) {
                                     lminvec = sphere_minvec;
                                 } else {
                                     lminvec = *closest_vec(ipoints, light.sphere.pos);
-                                } */
-                                if (dotp > std::max(0.0f, object.smoothness)) {
+                                }
+                                if (dotp > object.smoothness && (lminvec - sphere_minvec).mod() < 0.05f) {
                                     applied_light += light.strength * dotp;
                                 }
                             }
                             char outch = '.';
                             if (applied_light > 0.0f) {
-                                outch = get_gradient(applied_light);
+                                outch = get_gradient(gradient_length - applied_light);
                             }
                             dist_to_chars[(camera_pos - sphere_minvec).mod()] = char_ex_info_t{outch, false};
                         }
