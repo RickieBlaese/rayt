@@ -1,6 +1,4 @@
-#include <cstdlib>
 #include <iostream>
-#include <stdexcept>
 #include <utility>
 #include <chrono>
 #include <numbers>
@@ -8,7 +6,6 @@
 #include <vector>
 #include <algorithm>
 #include <cinttypes>
-#include <cerrno>
 #include <cmath>
 
 #include <ncurses.h>
