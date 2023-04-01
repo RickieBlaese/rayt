@@ -46,7 +46,8 @@ struct vec_t {
     vec_t operator*(const float v) const { return {x * v, y * v, z * v}; }
     vec_t operator/(const float v) const { return {x / v, y / v, z / v}; }
     float mod() const { return std::sqrt(x * x + y * y + z * z); }
-    float dot(const vec_t& other) { return 0.0f /* TODO */; }
+    float dot(const vec_t& other) const { return x * other.x + y * other.y + z * other.z; }
+    vec_t normalized() const { return *this / mod(); }
 };
 
 /*
@@ -91,7 +92,6 @@ void intersect(const line_t& line, const sphere_t& sphere, std::vector<vec_t>& o
         (sphere.r * sphere.r);
     const float discr = (beta * beta) - 4 * alpha * gamma;
     if (discr < 0) {
-        [](){}();
         return;
     }
     const float t1    = (-beta + std::sqrt(discr)) / (2 * alpha);
@@ -104,19 +104,19 @@ line_t between(const vec_t& p1, const vec_t& p2) {
     return {p1, p2.x - p1.x, p2.y - p1.y, p2.z - p1.z};
 }
 
-vec_t closest_vec(const std::vector<vec_t>& vecs, const vec_t& pos) {
+std::vector<vec_t>::const_iterator closest_vec(const std::vector<vec_t>& vecs, const vec_t& pos) {
     if (vecs.empty()) {
         deinit_ncurses(stdscr);
-        fprintf(stderr, "error: %s called on empty vecs\n", __func__);
+        fprintf(stderr, "error: " __FILE__ ":%s():%i: empty vecs passed\n", __func__, __LINE__);
         exit(EXIT_FAILURE);
     }
 
     float mindist = (pos - vecs[0]).mod();
-    vec_t minvec = vecs[0];
-    for (const vec_t& vec : vecs) {
-        if ((pos - vec).mod() < mindist) {
-            mindist = (pos - vec).mod();
-            minvec = vec;
+    auto minvec = vecs.begin();
+    for (auto it = vecs.begin() + 1; it != vecs.end(); it++) {
+        if ((pos - *it).mod() < mindist) {
+            mindist = (pos - *it).mod();
+            minvec = it;
         }
     }
     return minvec;
@@ -128,13 +128,23 @@ struct vec4_t {
 };
 
 struct light_t {
-    sphere_t obj;
+    sphere_t sphere;
     float strength = 0.0f;
 };
 
+struct obj_t {
+    sphere_t sphere;
+    float smoothness = 1.0f;
+};
+
 struct scene_t {
-    std::vector<sphere_t> spheres;
+    std::vector<obj_t> objects;
     std::vector<light_t> lights;
+};
+
+struct char_ex_info_t {
+    char ch;
+    bool is_bold = false;
 };
 
 
@@ -144,13 +154,16 @@ std::uint64_t get_current_time() {
 
 
 int main() {
-    constexpr const char *gradient = "..'`^\",_-:;=Il!i><~+?][}{1)(|\\/tfjrxnuvczXYUJCLQO0Zmwqpdbkhao*#MW&8%B@$";
-    constexpr std::int32_t gradient_length = 70;
-    constexpr auto get_gradient = [](float x) { return gradient[std::clamp<std::int32_t>(static_cast<std::int32_t>(std::round(x)), 0, gradient_length - 1)]; };
-    constexpr float fps = 60.0f;
+    constexpr float fps = 240.0f;
+
+    const std::string gradient = ".._,'`^\"-~:;=l!i><+?|][}{)(\\/1trxnuvczjfXYUJICLQO0Zmwqpdbkhao*#MW&8%B@$";
+    const std::int32_t gradient_length = gradient.length();
+    const auto get_gradient = [&gradient, &gradient_length](float x) -> char {
+        return gradient[std::clamp<std::int32_t>(static_cast<std::int32_t>(std::round(x)), 0, gradient_length - 1)];
+    };
 
     const float wait_per_frame = 1.0f / fps;
-    const std::uint64_t wait_us_per_frame = wait_per_frame * 1'000'000ULL;
+    const std::uint64_t wait_us_per_frame = 1'000'000ULL / fps;
 
     WINDOW *win = init_ncurses();
     wclear(win);
@@ -174,17 +187,17 @@ int main() {
     const float y_move_speed = 20.0f;
 
     scene_t scene;
-    scene.spheres.push_back(sphere_t{vec_t(0, 0, 30), 10.0f});
-    scene.lights.push_back(light_t{sphere_t{vec_t(0, 15, 30), 1.0f}, 5.0f});
-    const vec_t light_orig_pos = scene.lights[0].obj.pos;
+    scene.objects.push_back(obj_t{sphere_t{vec_t(0, 0, 30), 10.0f}, 0.1f});
+    scene.lights.push_back(light_t{sphere_t{vec_t(0, 18, 30), 1.0f}, 50.0f});
+    const vec_t light_orig_pos = scene.lights[0].sphere.pos;
 
     std::vector<vec_t> ipoints;
-    std::map<float, char> dist_to_chars;
+    std::map<float, char_ex_info_t> dist_to_chars;
     while (true) {
         while (get_current_time() - last_time < wait_us_per_frame) {;}
         last_time = get_current_time();
-        scene.lights[0].obj.pos.x = light_orig_pos.x + 10 * std::cos((last_time - begin_time) / 1'000'000.0);
-        scene.lights[0].obj.pos.z = light_orig_pos.z + 10 * std::sin((last_time - begin_time) / 1'000'000.0);
+        scene.lights[0].sphere.pos.x = light_orig_pos.x + 10 * std::cos((last_time - begin_time) / 1'000'000.0);
+        scene.lights[0].sphere.pos.z = light_orig_pos.z + 10 * std::sin((last_time - begin_time) / 1'000'000.0);
         chtype chin = wgetch(win);
         if (chin == '\t') { break; }
         else if (chin == 'q') { camera_pos.y += wait_per_frame * y_move_speed; }
@@ -203,28 +216,38 @@ int main() {
                 dist_to_chars.clear();
 
                 /* render spheres with appropriate lighting */
-                for (const sphere_t& sphere : scene.spheres) {
+                for (const obj_t& object : scene.objects) {
                     ipoints.clear();
-                    intersect(ray, sphere, ipoints);
+                    intersect(ray, object.sphere, ipoints);
                     if (!ipoints.empty()) {
-                        vec_t sphere_minvec = closest_vec(ipoints, camera_pos);
+                        vec_t sphere_minvec = *closest_vec(ipoints, camera_pos);
                         /* nonpermanent and bad solution for camera being in front of sphere */
                         if (sphere_minvec.z > camera_pos.z) {
                             out = '.';
                             /* checking to make sure it is the visible intersection
                              * i.e. the closest intersect with sphere is equal or close
-                             * enough to the closest intersect with light_src */
-                            ipoints.clear();
+                             * enough to the closest intersect with light source */
                             float applied_light = 0.0f;
                             for (const light_t& light : scene.lights) {
-                                intersect(between(light.obj.pos, sphere.pos), sphere, ipoints);
+                                ipoints.clear();
+                                const float dotp = (object.sphere.pos - sphere_minvec).normalized().dot((object.sphere.pos - light.sphere.pos).normalized());
+                                /* intersect(between(light.sphere.pos, sphere_minvec), object.sphere, ipoints); */
                                 /* guaranteed to intersect because by above line it goes through both light and sphere */
-                                vec_t lminvec = closest_vec(ipoints, light.obj.pos);
-                                if ((lminvec - sphere_minvec).mod() < 20.0f) { /* amount here is sort of like smoothness of surface */
-                                    applied_light += light.strength * (light.obj.pos - sphere_minvec).mod();
+                                /* vec_t lminvec;
+                                if (ipoints.empty()) {
+                                    lminvec = sphere_minvec;
+                                } else {
+                                    lminvec = *closest_vec(ipoints, light.sphere.pos);
+                                } */
+                                if (dotp > std::max(0.0f, object.smoothness)) {
+                                    applied_light += light.strength * dotp;
                                 }
                             }
-                            dist_to_chars[(camera_pos - sphere_minvec).mod()] = get_gradient(gradient_length - applied_light);
+                            char outch = '.';
+                            if (applied_light > 0.0f) {
+                                outch = get_gradient(applied_light);
+                            }
+                            dist_to_chars[(camera_pos - sphere_minvec).mod()] = char_ex_info_t{outch, false};
                         }
                     }
                 }
@@ -233,14 +256,14 @@ int main() {
                 for (const light_t& light : scene.lights) {
                     /* checking intersect with light src */
                     ipoints.clear();
-                    intersect(ray, light.obj, ipoints);
+                    intersect(ray, light.sphere, ipoints);
                     if (!ipoints.empty()) {
                         /* find closest point of intersect, we do not want back of sphere */
-                        const vec_t minvec = closest_vec(ipoints, camera_pos);
+                        const vec_t minvec = *closest_vec(ipoints, camera_pos);
 
                         /* nonpermanent and bad solution */
                         if (minvec.z > camera_pos.z) {
-                            dist_to_chars[(camera_pos - light.obj.pos).mod()] = get_gradient(light.strength);
+                            dist_to_chars[(camera_pos - light.sphere.pos).mod()] = char_ex_info_t{get_gradient(light.strength), true};
                         }
                     }
                 }
@@ -249,9 +272,15 @@ int main() {
                     mvwaddch(win, i, j * 2, ' ');
                     waddch(win, ' ');
                 } else {
-                    const char outch = dist_to_chars.begin()->second;
-                    mvwaddch(win, i, j * 2, outch);
-                    waddch(win, outch);
+                    const char_ex_info_t outch = dist_to_chars.begin()->second;
+                    if (outch.is_bold) {
+                        wattron(win, A_BOLD);
+                    }
+                    mvwaddch(win, i, j * 2, outch.ch);
+                    waddch(win, outch.ch);
+                    if (outch.is_bold) {
+                        wattroff(win, A_BOLD);
+                    }
                 }
             }
         }
