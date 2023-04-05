@@ -36,10 +36,12 @@ struct gvec3_t { /* NOLINT */
     gvec3_t operator-() const { return {-x, -y, -z}; }
     gvec3_t operator-(const gvec3_t& other) const { return *this + (-other); }
     gvec3_t& operator-=(const gvec3_t& other) { return *this = *this - other; }
+
     template <typename Y>
-    gvec3_t<T> operator*(const Y v) const { return {x * v, y * v, z * v}; }
+    gvec3_t<T> operator*(const Y& v) const { return {x * v, y * v, z * v}; }
     template <typename Y>
-    gvec3_t<T> operator/(const Y v) const { return {x / v, y / v, z / v}; }
+    gvec3_t<T> operator/(const Y& v) const { return {x / v, y / v, z / v}; }
+
     float mod() const { return std::sqrt(x * x + y * y + z * z); }
     T dot(const gvec3_t& other) const { return x * other.x + y * other.y + z * other.z; }
     gvec3_t normalized() const { return *this / mod(); }
@@ -90,34 +92,35 @@ vec3_t operator"" _vec(const char *s) {
 
 
 struct line_t {
-    vec3_t pos;
-    float a = 0, b = 0, c = 0;
+    vec3_t pos, n;
 
     vec3_t f(float t) const {
-        return {pos.x + a * t, pos.y + b * t, pos.z + c * t};
+        return {pos.x + n.x * t, pos.y + n.y * t, pos.z + n.z * t};
     }
 };
 
 line_t line_between(const vec3_t& p1, const vec3_t& p2) {
-    return {p1, p2.x - p1.x, p2.y - p1.y, p2.z - p1.z};
+    return {p1, p2 - p1};
 }
 
 
-/* not even sure if this is the correct representation */
 struct plane_t {
-    vec2_t pos;
-    float a = 0, b = 0;
-
-    vec3_t f(float t, float u) const {
-        const float x = pos.x + a * t;
-        const float z = pos.z + b * u;
-        const float y = std::sqrt(t * t - x * x) + std::sqrt(u * u - z * z);
-        return {x, y, z};
-    }
+    vec3_t pos, normal;
 };
 
-plane_t plane_between(const vec3_t& p1, const vec3_t& p2, const vec3_t& p3) {
-    return {vec2_t{p1.x, p1.z}, p2.x - p1.x, p3.y - p2.y};
+void lp_intersect(const line_t& line, const plane_t& plane, std::vector<vec3_t>& out) {
+    const float alpha = (plane.normal.x * line.n.x + plane.normal.y * line.n.y + plane.normal.z * line.n.z);
+    if (alpha == 0) {
+        return;
+    }
+    const float t = (plane.normal.x * (plane.pos.x - line.pos.x) + 
+        plane.normal.y * (plane.pos.y - line.pos.y) +
+        plane.normal.z * (plane.pos.z - line.pos.z)) / alpha;
+    out.push_back(line.f(t));
+}
+
+vec3_t p_reflect(const plane_t& plane, const vec3_t& vec) {
+    return vec - plane.normal * (vec.dot(plane.normal)) * 2.0f;
 }
 
 
@@ -127,11 +130,11 @@ struct sphere_t {
 };
 
 void ls_intersect(const line_t& line, const sphere_t& sphere, std::vector<vec3_t>& out) {
-    const float alpha = (line.a * line.a) + (line.b * line.b) + (line.c * line.c);
+    const float alpha = (line.n.x * line.n.x) + (line.n.y * line.n.y) + (line.n.z * line.n.z);
     const float beta  = 2 * (
-        line.a * (line.pos.x - sphere.pos.x) +
-        line.b * (line.pos.y - sphere.pos.y) +
-        line.c * (line.pos.z - sphere.pos.z));
+        line.n.x * (line.pos.x - sphere.pos.x) +
+        line.n.y * (line.pos.y - sphere.pos.y) +
+        line.n.z * (line.pos.z - sphere.pos.z));
     const float gamma = -2 * ((line.pos.x * sphere.pos.x) + (line.pos.y * sphere.pos.y) + (line.pos.z * sphere.pos.z)) +
         line.pos.x * line.pos.x + sphere.pos.x * sphere.pos.x +
         line.pos.y * line.pos.y + sphere.pos.y * sphere.pos.y +
@@ -161,35 +164,38 @@ struct light_t {
     float strength = 0.0f;
 };
 
-struct obj_t {
+struct sphere_obj_t {
     sphere_t sphere;
     float smoothness = 1.0f;
     rgb_t color;
 };
 
+struct plane_obj_t {
+    plane_t plane;
+    float smoothness = 1.0f;
+    rgb_t color;
+};
+
 struct scene_t {
-    std::vector<obj_t> objects;
+    std::vector<sphere_obj_t> spheres;
+    std::vector<plane_obj_t> planes;
     std::vector<light_t> lights;
 };
 
 struct char_ex_info_t { /* NOLINT */
-    char ch = ' ';
-    rgb_t fg{255, 255, 255}, bg{22, 24, 33};
+    wchar_t ch = L' ';
+    rgb_t color{255, 255, 255};
 
     char_ex_info_t& operator=(const char_ex_info_t& other) = default;
 
     bool operator==(const char_ex_info_t& other) const {
-        return ch == other.ch && fg == other.fg && bg == other.bg;
+        return ch == other.ch && color == other.color;
     }
 
     bool operator!=(const char_ex_info_t& other) const {
         return !(*this == other);
     }
 };
-
-std::string move_out(std::int32_t y, std::int32_t x) {
-    return "\033[" + std::to_string(y) + ';' + std::to_string(x) + 'H';
-}
 
 
 std::uint64_t get_current_time() {
@@ -203,9 +209,9 @@ int main() {
     }
     constexpr float fps = 60.0f;
 
-    const std::string gradient = ".._,'`^\"-~:;=l!i><+?|][}{)(\\/1trxnuvczjfXYUJICLQO0Zmwqpdbkhao*#MW&8%B@$";
+    const std::wstring gradient = L".._,'`^\"-~:;=l!i><+?|][}{)(\\/1trxnuvczjfXYUJICLQO0Zmwqpdbkhao*#MW&8%B@$";
     const auto gradient_length = static_cast<std::int32_t>(gradient.length());
-    const auto get_gradient = [&gradient, &gradient_length](float x) -> char {
+    const auto get_gradient = [&gradient, &gradient_length](float x) -> wchar_t {
         return gradient[std::clamp<std::int32_t>(static_cast<std::int32_t>(std::round(x)), 0, gradient_length - 1)];
     };
 
@@ -243,10 +249,15 @@ int main() {
     const float y_move_speed = 1.0f;
 
     scene_t scene;
-    scene.objects.push_back(obj_t{
-        sphere_t{vec3_t(0, 0, 30), 10.0f},
+    scene.spheres.push_back(sphere_obj_t{
+        sphere_t{vec3_t(0, 0, 30), 20.0f},
         0.01f,
-        {255, 255, 255}
+        {255, 0, 0}
+    });
+    scene.planes.push_back(plane_obj_t{
+        plane_t{vec3_t(0, 0, 45), vec3_t(0, 0, -1).normalized()},
+        0.5f,
+        {0, 255, 0}
     });
     scene.lights.push_back(light_t{
         sphere_t{vec3_t(0, 15, 30), 1.0f},
@@ -274,7 +285,6 @@ int main() {
 
         ncplane_dim_yx(plane, &dimy, &dimx);
 
-
         /* resize buffers as window size changes */
         if (buffer.size() != dimy) {
             buffer.resize(dimy);
@@ -289,11 +299,11 @@ int main() {
         }
 
         /* revolve the light source */
-        scene.lights[0].sphere.pos.x = light_orig_pos.x + 10 * std::cos(static_cast<float>(last_time - begin_time) / 1'000'000.0f);
-        scene.lights[0].sphere.pos.z = light_orig_pos.z + 10 * std::sin(static_cast<float>(last_time - begin_time) / 1'000'000.0f);
+        scene.lights[0].sphere.pos.x = light_orig_pos.x + 15 * std::cos(3.0f * static_cast<float>(last_time - begin_time) / 1'000'000.0f);
+        scene.lights[0].sphere.pos.z = light_orig_pos.z + 15 * std::sin(3.0f * static_cast<float>(last_time - begin_time) / 1'000'000.0f);
 
         
-        uint32_t chin = notcurses_get_nblock(nc, nullptr);
+        std::uint32_t chin = notcurses_get_nblock(nc, nullptr);
         if (chin == L'\t') { break; }
         else if (chin == L'q') { camera_pos.y += y_move_speed; }
         else if (chin == L'e') { camera_pos.y -= y_move_speed; }
@@ -311,7 +321,7 @@ int main() {
                 dist_to_chars.clear();
 
                 /* render spheres with appropriate lighting */
-                for (const obj_t& object : scene.objects) {
+                for (const sphere_obj_t& object : scene.spheres) {
                     ipoints.clear();
                     ls_intersect(ray, object.sphere, ipoints);
                     if (!ipoints.empty()) {
@@ -341,17 +351,46 @@ int main() {
                                 }
                             }
                             applied_light = std::clamp<float>(applied_light, 0.0f, 1.0f);
-                            char outch = '.';
+                            wchar_t outch = L'.';
                             if (applied_light > 0.0f) {
                                 outch = get_gradient(static_cast<float>(gradient_length - 1) * applied_light);
                             } else if ((sphere_minvec - sphere_maxvec).mod() < 0.1f) { /* is close, i.e. edge */
-                                outch = '-';
+                                outch = L'-';
                             }
                             gvec3_t<std::int32_t> outcolor;
                             outcolor.x = static_cast<std::int32_t>(static_cast<float>(object.color.x) * applied_light);
                             outcolor.y = static_cast<std::int32_t>(static_cast<float>(object.color.y) * applied_light);
                             outcolor.z = static_cast<std::int32_t>(static_cast<float>(object.color.z) * applied_light);
                             dist_to_chars[(camera_pos - sphere_minvec).mod()] = char_ex_info_t{outch, outcolor};
+                        }
+                    }
+                }
+
+                /* render planes */
+                for (const plane_obj_t& object : scene.planes) {
+                    ipoints.clear();
+                    lp_intersect(ray, object.plane, ipoints);
+                    if (!ipoints.empty()) {
+                        const vec3_t ipoint = ipoints[0];
+                        if (ipoint.z > camera_pos.z) {
+                            float applied_light = 0.0f;
+                            for (const light_t& light : scene.lights) {
+                                ipoints.clear();
+                                const float dotp = p_reflect(object.plane, ray.n).normalized().dot((light.sphere.pos - ipoint).normalized());
+                                if (dotp > object.smoothness) {
+                                    applied_light += light.strength * dotp;
+                                }
+                            }
+                            applied_light = std::clamp<float>(applied_light, 0.0f, 1.0f);
+                            wchar_t outch = L'#';
+                            if (applied_light > 0.0f) {
+                                outch = get_gradient(static_cast<float>(gradient_length - 1) * applied_light);
+                            }
+                            gvec3_t<std::int32_t> outcolor;
+                            outcolor.x = static_cast<std::int32_t>(static_cast<float>(object.color.x) * applied_light);
+                            outcolor.y = static_cast<std::int32_t>(static_cast<float>(object.color.y) * applied_light);
+                            outcolor.z = static_cast<std::int32_t>(static_cast<float>(object.color.z) * applied_light);
+                            dist_to_chars[(camera_pos - ipoint).mod()] = char_ex_info_t{outch, outcolor};
                         }
                     }
                 }
@@ -391,8 +430,7 @@ int main() {
                             if (updated_positions.size() > dimy - 3) {
                                 updated_positions.erase(updated_positions.begin() + static_cast<std::int64_t>((updated_positions.size() - (dimy - 3))));
                             }
-                            ncplane_set_fg_rgb8(plane, buffer[i][j].fg.x, buffer[i][j].fg.y, buffer[i][j].fg.z);
-                            /* ncplane_set_bg_rgb8(plane, buffer[i][j].bg.x, buffer[i][j].bg.y, buffer[i][j].bg.z); */
+                            ncplane_set_fg_rgb8(plane, buffer[i][j].color.x, buffer[i][j].color.y, buffer[i][j].color.z);
                             ncplane_putwc_yx(plane, i, j * 2, buffer[i][j].ch);
                             ncplane_putwc(plane, buffer[i][j].ch);
                         }
@@ -402,17 +440,17 @@ int main() {
         }
         last_buffer = buffer;
 
-        /* mvwprintw(win, 0, 0, "x: %.2f", camera_pos.x);
-        mvwprintw(win, 1, 0, "y: %.2f", camera_pos.y);
-        mvwprintw(win, 2, 0, "z: %.2f", camera_pos.z);
+        ncplane_set_fg_rgb8(plane, 0, 0, 0);
+        ncplane_printf_yx(plane, 0, 0, "x: %.2f", camera_pos.x);
+        ncplane_printf_yx(plane, 1, 0, "y: %.2f", camera_pos.y);
+        ncplane_printf_yx(plane, 2, 0, "z: %.2f", camera_pos.z);
         std::int32_t cury = 2;
         for (const auto& [x, y, ch] : updated_positions) {
-            if (cury >= LINES) { break; }
+            if (cury >= dimy) { break; }
             cury++;
-            mvwprintw(win, cury, 0, "%c, x: %4i, y: %-4i", ch, x, y);
+            ncplane_printf_yx(plane, cury, 0, "%c, x: %4i, y: %-4i", ch, x, y);
         }
 
-        wrefresh(win); */
         notcurses_render(nc);
     }
 
