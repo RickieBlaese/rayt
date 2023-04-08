@@ -109,16 +109,15 @@ constexpr std::size_t gtype_light = 2;
 
 struct light_t {
     std::variant<sphere_t, plane_t> obj;
-    float strength = 0.0f;
     
-    /* function for how quick the light strength should falloff based on distance (x), returns a multiplier */
-    std::function<float (float)> falloff = [](float x) -> float {
+    /* function for how quick the light strength should falloff based on distance (x) */
+    std::function<float (float)> strength = [](float x) -> float {
         /* this is just a step-down function from a to b */
-        const float a = 2, b = 10;
+        const float a = 0, b = 200;
         x = std::clamp<float>(x, a, b);
         const float alpha = std::pow(std::numbers::e_v<float>, - (b - a) / (x - a));
         const float beta  = std::pow(std::numbers::e_v<float>, - (b - a) / (b - x));
-        return 1 - alpha / (alpha + beta);
+        return 1.0f - alpha / (alpha + beta);
     };
 };
 
@@ -276,7 +275,7 @@ int main() {
     constexpr float fps = 60.0f;
     constexpr std::uint32_t max_light_bounces = 10;
 
-    const std::wstring gradient = L".._,'`^\"-~:;=!><+?|][}{)(\\/trxnuvczijl1fXYUJICLQO0Zmwqpdbkhao*#MW&8%B@$";
+    const std::wstring gradient = L".._,'`^\"-~:;=!><+?|][}{)(\\/trxnuvczijl1fXYUJICLQO0Zmwqpdbkhao#MW&8%B@$";
     const auto gradient_length = static_cast<std::int32_t>(gradient.length());
     const auto get_gradient = [&gradient, &gradient_length](float x) -> wchar_t {
         return gradient[std::clamp<std::int32_t>(static_cast<std::int32_t>(std::round(x)), 0, gradient_length - 1)];
@@ -319,7 +318,7 @@ int main() {
     const float shift_multiplier = 3.0f;
     const float angle_increment = std::numbers::pi / 30.0f;
 
-    const float minimum_color_multiplier = 0.9f;
+    const float minimum_color_multiplier = 0.1f;
 
     /* add objects to scene */
     scene_t scene;
@@ -328,7 +327,7 @@ int main() {
     vec3_t &camera_n   = scene.camera_ray.n;
     scene.objects.push_back(new gobj_t{
         sphere_t{vec3_t(0, 0, 30), 20.0f},
-        {255, 0, 0}
+        {0, 255, 0}
     });
     scene.objects.push_back(new gobj_t{
         sphere_t{vec3_t(0, 0, 80), 20.0f},
@@ -336,11 +335,10 @@ int main() {
     });
     auto *light_obj = new gobj_t{
         light_t{
-            sphere_t{vec3_t(-100, 0, 0), 50.0f},
-            1.0f,
-            []([[maybe_unused]] float x) { return 1.0f/* 100 * std::pow(std::numbers::e_v<float>, -x) */; }
+            plane_t{vec3_t(100, 0, 0), vec3_t(-1, 0, 0)},
+            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/50.0f) + 0.3f; }
         },
-        {255, 255, 255}
+        {255, 127, 127}
     };
     /* auto &light = std::get<light_t>(light_obj->obj); */
     /* auto &light_sphere = std::get<sphere_t>(light.obj); */
@@ -410,7 +408,7 @@ int main() {
                 const gobj_t *last_obj = nullptr;
                 rgb_t original_color;
                 line_t line = ray;
-                float total_distance = -ray.n.mod();
+                float total_distance = 0.0f;
 
                 for (light_bounces = 0; light_bounces < max_light_bounces; light_bounces++) {
                     /* first, determine the closest intersection point out of all objects on the ray */
@@ -460,7 +458,7 @@ int main() {
                     }
                 } else {
                     const auto &tlight = std::get<light_t>(plight->obj);
-                    float applied_light = tlight.falloff(total_distance) * tlight.strength;
+                    float applied_light = tlight.strength(total_distance);
                     current_char = char_ex_info_t{get_gradient(static_cast<float>(gradient_length - 1) * applied_light), multiplier(original_color, applied_light)};
                 }
 
