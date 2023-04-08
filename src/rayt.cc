@@ -14,7 +14,6 @@
 #include <cinttypes>
 #include <cmath>
 
-#include <math.h>
 #include <notcurses/notcurses.h>
 
 
@@ -57,34 +56,7 @@ struct gvec3_t { /* NOLINT */
     gvec3_t z_rotated(float theta) const { return {x, y, z * mod() * std::sin(theta)}; }
 };
 
-/* general vec2 */
-template <typename T>
-struct gvec2_t { /* NOLINT */
-    T x = 0, z = 0;
-
-    gvec2_t() = default;
-    gvec2_t(T x, T z) : x(x), z(z) {}
-    gvec2_t(const gvec2_t& other) = default;
-    ~gvec2_t() = default;
-    bool operator==(const gvec2_t& other) const { return x == other.x && z == other.z; }
-    gvec2_t& operator=(const gvec2_t& other) = default;
-
-    gvec2_t operator+(const gvec2_t& other) const { return {x + other.x, z + other.z}; }
-    gvec2_t& operator+=(const gvec2_t& other) { return *this = *this + other; }
-    gvec2_t operator-() const { return {-x, -z}; }
-    gvec2_t operator-(const gvec2_t& other) const { return *this + (-other); }
-    gvec2_t& operator-=(const gvec2_t& other) { return *this = *this - other; }
-    gvec2_t operator*(const T v) const { return {x * v, z * v}; }
-    gvec2_t operator/(const T v) const { return {x / v, z / v}; }
-
-    float mod() const { return std::sqrt(x * x + z * z); }
-    T dot(const gvec2_t& other) const { return x * other.x + z * other.z; }
-    gvec2_t normalized() const { return *this / mod(); }
-};
-
-
 using vec3_t = gvec3_t<float>;
-using vec2_t = gvec2_t<float>;
 using rgb_t = gvec3_t<std::int32_t>;
 
 
@@ -347,18 +319,17 @@ int main() {
         sphere_t{vec3_t(0, 0, 30), 20.0f},
         {255, 0, 0}
     });
-    /* scene.objects.push_back(new gobj_t{
-        plane_t{vec3_t(0, 0, 45), vec3_t(0, 0, -1).normalized()},
-        gobj_type::plane,
+    scene.objects.push_back(new gobj_t{
+        plane_t{vec3_t(0, 0, 55), vec3_t(0, 0, -1).normalized()},
         {0, 0, 255}
-    }); */
+    });
     auto *light_obj = new gobj_t{
         light_t{
             plane_t{vec3_t(-100, 0, 0), vec3_t(1, 0, 0)},
             1.0f,
             []([[maybe_unused]] float x) { return 1.0f/* 100 * std::pow(std::numbers::e_v<float>, -x) */; }
         },
-        {0, 255, 0}
+        {255, 255, 255}
     };
     /* auto& light = std::get<light_t>(light_obj->obj); */
     /* auto& light_sphere = std::get<sphere_t>(light.obj); */
@@ -367,6 +338,8 @@ int main() {
 
     std::vector<float> itimes;
     std::uint32_t dimy = 0, dimx = 0;
+    float camera_rotation_x = 0.0f; /* accounts for both x and z */
+    float camera_rotation_y = 0.0f;
 
     while (true) {
         while (get_current_time() - last_time < wait_us_per_frame) {;}
@@ -394,8 +367,8 @@ int main() {
         else if (chin == L'a') { camera_pos.x -= x_move_speed; camera_n.x -= x_move_speed; }
         else if (chin == L'A') { camera_pos.x -= x_move_speed * shift_multiplier; camera_n.x -= x_move_speed * shift_multiplier; }
 
-        else if (chin == L'j') { camera_pos = (camera_pos - camera_n).x_rotated(0.1f) + camera_n; }
-        else if (chin == L'l') { camera_pos = (camera_pos - camera_n).x_rotated(-0.1f) + camera_n; }
+        else if (chin == L'j') { camera_pos = (camera_pos - camera_n).x_rotated(0.1f) + camera_n; camera_rotation_x += 0.1f; }
+        else if (chin == L'l') { camera_pos = (camera_pos - camera_n).x_rotated(-0.1f) + camera_n; camera_rotation_x -= 0.1f; }
 
 
         /* WARNING: all the following logic basically assumes scene.objects isn't empty */
@@ -404,6 +377,7 @@ int main() {
             for (std::int32_t j = 0; j < dimx / 2; j++) {
                 /* position for i is flipped since notcurses says y down is positive while we want y up is positive */
                 vec3_t curpos = vec3_t((j - dimx / 4.0f) * x_mul, (-i + dimy / 2.0f) * y_mul, 0); /* NOLINT */
+                curpos = curpos.x_rotated(camera_rotation_x); /* is still "at the origin" */
                 line_t ray = line_between(camera_pos, camera_n + curpos); /* t positive is "forward" */
                 char_ex_info_t current_char;
 
@@ -463,7 +437,7 @@ int main() {
                 } else {
                     const auto& tlight = std::get<light_t>(plight->obj);
                     float applied_light = tlight.falloff(total_distance) * tlight.strength;
-                    current_char = char_ex_info_t{get_gradient((gradient_length - 1) * applied_light), multiplier(original_color, applied_light)};
+                    current_char = char_ex_info_t{get_gradient(static_cast<float>(gradient_length - 1) * applied_light), multiplier(original_color, applied_light)};
                 }
 
                 ncplane_set_fg_rgb8(plane, current_char.color.x, current_char.color.y, current_char.color.z);
