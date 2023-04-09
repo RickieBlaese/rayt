@@ -1,27 +1,24 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
-#include <iostream>
 #include <limits>
-#include <map>
 #include <numbers>
 #include <random>
-#include <utility>
-#include <unordered_map>
 #include <variant>
 #include <vector>
 
 #include <cinttypes>
 #include <cmath>
+#include <cstdio>
 
 #include <notcurses/notcurses.h>
 
 
 #define ERR_EXIT(...) { \
-    fprintf(stderr, "error: file " __FILE__ ", func %s, line %i: ", __func__, __LINE__); \
-    fprintf(stderr, __VA_ARGS__); \
-    fputc('\n', stderr); \
-    exit(EXIT_FAILURE); \
+    std::fprintf(stderr, "error: file " __FILE__ ", func %s, line %i: ", __func__, __LINE__); \
+    std::fprintf(stderr, __VA_ARGS__); \
+    std::fputc('\n', stderr); \
+    std::exit(EXIT_FAILURE); \
 }
 
 
@@ -93,6 +90,16 @@ struct plane_t {
 };
 
 
+struct bounded_plane_t {
+    plane_t plane; 
+    /* a, b is begin corrds and c, d are "length" or "width" of a, b respectively */
+    /* c, d must be positive */
+    /* if normal axis is x then these are y, z coords */
+    /* if normal axis is y then these are x, z coords */
+    /* if normal axis is z then these are x, y coords */
+    float a = 0, b = 0, c = 0, d = 0;
+};
+
 struct sphere_t {
     vec3_t pos;
     float r = 0;
@@ -105,10 +112,11 @@ struct sphere_t {
 /* general variant indices, to be compared with variant.index() */
 constexpr std::size_t gtype_sphere = 0;
 constexpr std::size_t gtype_plane = 1;
-constexpr std::size_t gtype_light = 2;
+constexpr std::size_t gtype_bounded_plane = 2;
+constexpr std::size_t gtype_light = 3;
 
 struct light_t {
-    std::variant<sphere_t, plane_t> obj;
+    std::variant<sphere_t, plane_t, bounded_plane_t> obj;
     
     /* function for how quick the light strength should falloff based on distance (x) */
     std::function<float (float)> strength = [](float x) -> float {
@@ -124,27 +132,50 @@ struct light_t {
 
 /* general object */
 struct gobj_t {
-    std::variant<sphere_t, plane_t, light_t> obj;
+    std::variant<sphere_t, plane_t, bounded_plane_t, light_t> obj;
     rgb_t color;
     bool mirror = false;
 };
+
+enum struct axis_t : std::uint32_t {
+    x, y, z
+};
+
+axis_t normal_to_axis(const vec3_t &normal, struct notcurses *nc) {
+    if (normal.x == 0 && normal.z == 0) {
+        return axis_t::y;
+    } else if (normal.x == 0 && normal.y == 0) {
+        return axis_t::z;
+    } else if (normal.y == 0 && normal.z == 0) {
+        return axis_t::x;
+    }
+    notcurses_stop(nc);
+    ERR_EXIT("bad nontrivial normal passed: vec3_t(%.2f, %.2f, %.2f)", normal.x, normal.y, normal.z);
+}
 
 vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc) {
     if (gobj.obj.index() == gtype_sphere) {
         return std::get<sphere_t>(gobj.obj).pos;
     } else if (gobj.obj.index() == gtype_plane) {
         return std::get<plane_t>(gobj.obj).pos;
+    } else if (gobj.obj.index() == gtype_bounded_plane) {
+        return std::get<bounded_plane_t>(gobj.obj).plane.pos;
     } else if (gobj.obj.index() == gtype_light) {
         const auto &light = std::get<light_t>(gobj.obj);
         if (light.obj.index() == gtype_sphere) {
             return std::get<sphere_t>(light.obj).pos;
         } else if (light.obj.index() == gtype_plane) {
             return std::get<plane_t>(light.obj).pos;
+        } else if (light.obj.index() == gtype_bounded_plane) {
+            return std::get<bounded_plane_t>(light.obj).plane.pos;
         }
+        notcurses_stop(nc);
+        ERR_EXIT("bad light variant index: std::get<light_t>(gobj.obj).obj.index() = %zu", light.obj.index());
     }
     notcurses_stop(nc);
     ERR_EXIT("bad variant index: gobj.obj.index() = %zu", gobj.obj.index());
 }
+
 
 void s_intersect(const line_t &line, const sphere_t &sphere, std::vector<float> &out) {
     const float alpha = (line.n.x * line.n.x) + (line.n.y * line.n.y) + (line.n.z * line.n.z);
@@ -178,18 +209,67 @@ void p_intersect(const line_t &line, const plane_t &plane, std::vector<float> &o
     out.push_back(t);
 }
 
+void bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std::vector<float> &out, struct notcurses *nc) {
+    static std::vector<float> thisout;
+    thisout.clear();
+    p_intersect(line, bounded_plane.plane, thisout);
+    axis_t axis = normal_to_axis(bounded_plane.plane.normal, nc);
+    switch (axis) {
+        case axis_t::x:
+            for (float t : thisout) {
+                const vec3_t pos = line.f(t);
+                /* is bad / outside */
+                if ((pos.y < bounded_plane.a || pos.y > bounded_plane.a + bounded_plane.c) ||
+                    (pos.z < bounded_plane.b || pos.z > bounded_plane.b + bounded_plane.d)) {
+                    continue;
+                }
+                out.push_back(t);
+            }
+            break;
+        case axis_t::y:
+            for (float t : thisout) {
+                const vec3_t pos = line.f(t);
+                /* is bad / outside */
+                if ((pos.x < bounded_plane.a || pos.x > bounded_plane.a + bounded_plane.c) ||
+                    (pos.z < bounded_plane.b || pos.z > bounded_plane.b + bounded_plane.d)) {
+                    continue;
+                }
+                out.push_back(t);
+            }
+            break;
+        case axis_t::z:
+            for (float t : thisout) {
+                const vec3_t pos = line.f(t);
+                /* is bad / outside */
+                if ((pos.x < bounded_plane.a || pos.x > bounded_plane.a + bounded_plane.c) ||
+                    (pos.y < bounded_plane.b || pos.y > bounded_plane.b + bounded_plane.d)) {
+                    continue;
+                }
+                out.push_back(t);
+            }
+            break;
+    }
+}
+
 /* out is a vector of the times (t) on the line that the intersect occured */
 void g_intersect(const line_t &line, const gobj_t &gobj, std::vector<float> &out, struct notcurses *nc) {
     if (gobj.obj.index() == gtype_sphere) {
         s_intersect(line, std::get<sphere_t>(gobj.obj), out);
     } else if (gobj.obj.index() == gtype_plane) {
         p_intersect(line, std::get<plane_t>(gobj.obj), out);
+    } else if (gobj.obj.index() == gtype_bounded_plane) {
+        bp_intersect(line, std::get<bounded_plane_t>(gobj.obj), out, nc);
     } else if (gobj.obj.index() == gtype_light) {
         const auto &light = std::get<light_t>(gobj.obj);
         if (light.obj.index() == gtype_sphere) {
             s_intersect(line, std::get<sphere_t>(light.obj), out);
         } else if (light.obj.index() == gtype_plane) {
             p_intersect(line, std::get<plane_t>(light.obj), out);
+        } else if (light.obj.index() == gtype_bounded_plane) {
+            bp_intersect(line, std::get<bounded_plane_t>(light.obj), out, nc);
+        } else {
+            notcurses_stop(nc);
+            ERR_EXIT("bad light variant index: std::get<light_t>(gobj.obj).obj.index() = %zu", light.obj.index());
         }
     } else {
         notcurses_stop(nc);
@@ -202,6 +282,7 @@ vec3_t p_reflect(const vec3_t &vec, const plane_t &plane) {
     return vec - plane.normal * vec.dot(plane.normal) * 2.0f;
 }
 
+
 vec3_t s_reflect(const vec3_t &vec, const sphere_t &sphere, const vec3_t &pos) {
     return p_reflect(vec, sphere.normal_plane(pos));
 }
@@ -212,13 +293,19 @@ vec3_t g_reflect(const vec3_t &vec, const gobj_t &gobj, const vec3_t &pos, struc
         return s_reflect(vec, std::get<sphere_t>(gobj.obj), pos);
     } else if (gobj.obj.index() == gtype_plane) {
         return p_reflect(vec, std::get<plane_t>(gobj.obj));
+    } else if (gobj.obj.index() == gtype_bounded_plane) {
+        return p_reflect(vec, std::get<bounded_plane_t>(gobj.obj).plane);
     } else if (gobj.obj.index() == gtype_light) {
         const auto &light = std::get<light_t>(gobj.obj);
         if (light.obj.index() == gtype_sphere) {
             return s_reflect(vec, std::get<sphere_t>(light.obj), pos);
         } else if (light.obj.index() == gtype_plane) {
             return p_reflect(vec, std::get<plane_t>(light.obj));
+        } else if (light.obj.index() == gtype_bounded_plane) {
+            return p_reflect(vec, std::get<bounded_plane_t>(light.obj).plane);
         }
+        notcurses_stop(nc);
+        ERR_EXIT("bad light variant index: std::get<light_t>(gobj.obj).obj.index() = %zu", light.obj.index());
     }
     notcurses_stop(nc);
     ERR_EXIT("bad variant index: gobj.obj.index() = %zu", gobj.obj.index());
@@ -274,9 +361,9 @@ std::uint64_t get_current_time() {
 
 int main() {
     constexpr float fps = 60.0f;
-    constexpr std::uint32_t max_light_bounces = 20;
+    constexpr std::uint32_t max_light_bounces = 5;
 
-    const std::wstring gradient = L".._,'`^\"-~:;=!><+?|][}{)(\\/trxnuvczijl1fXYUJICLQO0Zmwqpdbkhao#MW&8%B@$";
+    const std::wstring gradient = L" ._,'`^\"-~:;=!><+?|][}{)(\\/trxnuovczmwaihqpdbkfjl1XYFGHNUJICLQO0Z#MW&8%B@$";
     const auto gradient_length = static_cast<std::int32_t>(gradient.length());
     const auto get_gradient = [&gradient, &gradient_length](float x) -> wchar_t {
         return gradient[std::clamp<std::int32_t>(static_cast<std::int32_t>(std::round(x)), 0, gradient_length - 1)];
@@ -321,43 +408,70 @@ int main() {
 
     const float minimum_color_multiplier = 0.1f;
 
-    /* add objects to scene */
+
+    /* --- add objects to scene --- */
     scene_t scene;
     scene.camera_ray = line_t{vec3_t(0, 0, 0), vec3_t(0, 0, begin_draw_dist)};
     vec3_t &camera_pos = scene.camera_ray.pos;
     vec3_t &camera_n   = scene.camera_ray.n;
+
+    
+    /* spheres */
     scene.objects.push_back(new gobj_t{
         sphere_t{vec3_t(0, 0, 30), 20.0f},
         {0, 255, 0}
     });
+    scene.objects.push_back(new gobj_t{
+        sphere_t{vec3_t(0, 0, 80), 20.0f},
+        {0, 0, 255}
+    });
 
-    /* mirrors */
+
+    /* planar mirrors */
     scene.objects.push_back(new gobj_t{
         plane_t{vec3_t(0, 0, 105), vec3_t(0, 0, -1)},
         {0, 0, 0},
         true,
     });
-    scene.objects.push_back(new gobj_t{
+    /* scene.objects.push_back(new gobj_t{
         plane_t{vec3_t(0, 0, 5), vec3_t(0, 0, 1)},
         {0, 0, 0},
         true,
+    }); */
+
+
+    /* bounded planes */
+    scene.objects.push_back(new gobj_t{
+        bounded_plane_t{
+            plane_t{vec3_t(0, 0, 1), vec3_t(0, 0, -1)},
+            -4, -4, 8, 8
+        },
+        {255, 255, 255}
     });
 
-    scene.objects.push_back(new gobj_t{ /* mirror */
-        sphere_t{vec3_t(0, 0, 80), 20.0f},
-        {0, 0, 255}
-    });
-    auto *light_obj = new gobj_t{
+
+    /* lights */
+    scene.objects.push_back(new gobj_t{
         light_t{
             plane_t{vec3_t(100, 0, 0), vec3_t(-1, 0, 0)},
             []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
         },
         {255, 127, 127}
-    };
-    /* auto &light = std::get<light_t>(light_obj->obj); */
-    /* auto &light_sphere = std::get<sphere_t>(light.obj); */
-    scene.objects.push_back(light_obj);
-    /* const vec3_t light_orig_pos = light_sphere.pos; */
+    });
+    scene.objects.push_back(new gobj_t{
+        light_t{
+            plane_t{vec3_t(-100, 0, 0), vec3_t(1, 0, 0)},
+            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
+        },
+        {255, 127, 127}
+    });
+    scene.objects.push_back(new gobj_t{
+        light_t{
+            plane_t{vec3_t(0, 0, -30), vec3_t(0, 0, 1)},
+            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
+        },
+        {255, 127, 127}
+    });
 
     std::vector<float> itimes;
     std::uint32_t dimy = 0, dimx = 0;
@@ -369,11 +483,6 @@ int main() {
         last_time = get_current_time();
 
         ncplane_dim_yx(plane, &dimy, &dimx);
-
-        /* revolve the light source */
-        /* light_sphere.pos.x = light_orig_pos.x + 15 * std::cos(static_cast<float>(last_time - begin_time) / 1'000'000.0f);
-        light_sphere.pos.z = light_orig_pos.z + 15 * std::sin(static_cast<float>(last_time - begin_time) / 1'000'000.0f); */
-
         
         std::uint32_t chin = notcurses_get_nblock(nc, nullptr);
         vec3_t move_d;
@@ -390,7 +499,6 @@ int main() {
         else if (chin == L'D') { move_d = {x_move_speed * shift_multiplier, 0, 0}; }
         else if (chin == L'a') { move_d = {-x_move_speed, 0, 0}; }
         else if (chin == L'A') { move_d = {-x_move_speed * shift_multiplier, 0, 0}; }
-
 
         else if (chin == L'j') { camera_n = rotated_x_about(camera_n, camera_pos,  angle_increment); camera_rotation_x += angle_increment; }
         else if (chin == L'l') { camera_n = rotated_x_about(camera_n, camera_pos, -angle_increment); camera_rotation_x -= angle_increment; }
@@ -422,7 +530,6 @@ int main() {
                 const gobj_t *last_obj = nullptr;
                 line_t line = ray;
                 float total_distance = 0.0f;
-                bool light_broke = false;
 
                 for (light_bounces = 0; light_bounces < max_light_bounces; light_bounces++) {
                     /* first, determine the closest intersection point out of all objects on the ray */
@@ -458,7 +565,6 @@ int main() {
                     total_distance += (line.pos - closest_pos).mod();
                     if (closest_obj->obj.index() == gtype_light) {
                         /* done, we are not reflecting off a light */
-                        light_broke = true;
                         break;
                     }
                     vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc);
@@ -470,10 +576,10 @@ int main() {
                 rgb_t color;
                 /* separated ifs so as not to rely on short circuiting */
                 if (original_obj != nullptr) {
-                    color = original_obj->color;
-                    if (original_obj->mirror) {
+                    color = original_obj->color * !original_obj->mirror + last_obj->color * original_obj->mirror; /* funny branchless */
+                    /* if (original_obj->mirror) {
                         color = last_obj->color;
-                    }
+                    } */
                 }
 
                 current_char = char_ex_info_t{L' ', {0, 0, 0}};
