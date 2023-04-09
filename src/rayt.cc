@@ -126,6 +126,7 @@ struct light_t {
 struct gobj_t {
     std::variant<sphere_t, plane_t, light_t> obj;
     rgb_t color;
+    bool mirror = false;
 };
 
 vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc) {
@@ -273,7 +274,7 @@ std::uint64_t get_current_time() {
 
 int main() {
     constexpr float fps = 60.0f;
-    constexpr std::uint32_t max_light_bounces = 10;
+    constexpr std::uint32_t max_light_bounces = 20;
 
     const std::wstring gradient = L".._,'`^\"-~:;=!><+?|][}{)(\\/trxnuvczijl1fXYUJICLQO0Zmwqpdbkhao#MW&8%B@$";
     const auto gradient_length = static_cast<std::int32_t>(gradient.length());
@@ -329,14 +330,27 @@ int main() {
         sphere_t{vec3_t(0, 0, 30), 20.0f},
         {0, 255, 0}
     });
+
+    /* mirrors */
     scene.objects.push_back(new gobj_t{
+        plane_t{vec3_t(0, 0, 105), vec3_t(0, 0, -1)},
+        {0, 0, 0},
+        true,
+    });
+    scene.objects.push_back(new gobj_t{
+        plane_t{vec3_t(0, 0, 5), vec3_t(0, 0, 1)},
+        {0, 0, 0},
+        true,
+    });
+
+    scene.objects.push_back(new gobj_t{ /* mirror */
         sphere_t{vec3_t(0, 0, 80), 20.0f},
         {0, 0, 255}
     });
     auto *light_obj = new gobj_t{
         light_t{
             plane_t{vec3_t(100, 0, 0), vec3_t(-1, 0, 0)},
-            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/50.0f) + 0.3f; }
+            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
         },
         {255, 127, 127}
     };
@@ -404,11 +418,11 @@ int main() {
                 char_ex_info_t current_char;
 
                 std::int32_t light_bounces = 0;
-                const gobj_t *plight = nullptr;
+                const gobj_t *original_obj = nullptr;
                 const gobj_t *last_obj = nullptr;
-                rgb_t original_color;
                 line_t line = ray;
                 float total_distance = 0.0f;
+                bool light_broke = false;
 
                 for (light_bounces = 0; light_bounces < max_light_bounces; light_bounces++) {
                     /* first, determine the closest intersection point out of all objects on the ray */
@@ -431,18 +445,20 @@ int main() {
                             closest_obj = prgobj;
                         }
                     }
-                    last_obj = closest_obj;
 
                     if (closest_obj == nullptr) {
                         break;
                     }
-                    if (light_bounces == 0) {
-                        original_color = closest_obj->color;
+                    last_obj = closest_obj;
+
+                    if (original_obj == nullptr && !closest_obj->mirror) {
+                        original_obj = closest_obj;
                     }
+
                     total_distance += (line.pos - closest_pos).mod();
                     if (closest_obj->obj.index() == gtype_light) {
-                        plight = closest_obj;
                         /* done, we are not reflecting off a light */
+                        light_broke = true;
                         break;
                     }
                     vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc);
@@ -450,16 +466,27 @@ int main() {
                     line.pos = closest_pos;
                 }
 
-                if (plight == nullptr) { /* never got illuminated */
-                    if (light_bounces > 0) {
-                        current_char = char_ex_info_t{L'.', multiplier(original_color, minimum_color_multiplier)};
-                    } else {
-                        current_char = char_ex_info_t{L' ', {0, 0, 0}};
+
+                rgb_t color;
+                /* separated ifs so as not to rely on short circuiting */
+                if (original_obj != nullptr) {
+                    color = original_obj->color;
+                    if (original_obj->mirror) {
+                        color = last_obj->color;
                     }
-                } else {
-                    const auto &tlight = std::get<light_t>(plight->obj);
-                    float applied_light = tlight.strength(total_distance);
-                    current_char = char_ex_info_t{get_gradient(static_cast<float>(gradient_length - 1) * applied_light), multiplier(original_color, applied_light)};
+                }
+
+                current_char = char_ex_info_t{L' ', {0, 0, 0}};
+                if (last_obj != nullptr) {
+                    if (last_obj->obj.index() != gtype_light) { /* never got illuminated */
+                        if (light_bounces > 0) {
+                            current_char = char_ex_info_t{L'.', multiplier(color, minimum_color_multiplier)};
+                        }
+                    } else {
+                        const auto &tlight = std::get<light_t>(last_obj->obj);
+                        float applied_light = tlight.strength(total_distance);
+                        current_char = char_ex_info_t{get_gradient(static_cast<float>(gradient_length - 1) * applied_light), multiplier(color, applied_light)};
+                    }
                 }
 
                 ncplane_set_fg_rgb8(plane, current_char.color.x, current_char.color.y, current_char.color.z);
