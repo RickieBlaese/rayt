@@ -67,6 +67,10 @@ rgb_t multiplier(const rgb_t &original_color, float k) {
     return outcolor;
 }
 
+rgb_t average_colors(const rgb_t &a, const rgb_t &b) {
+    return multiplier(a + b,  0.5f);
+}
+
 inline void sort_by_dist(std::vector<vec3_t> &vecs, const vec3_t &pos) {
     std::sort(vecs.begin(), vecs.end(), [&pos](const vec3_t &a, const vec3_t &b) { return (pos - a).mod() < (pos - b).mod(); });
 }
@@ -92,11 +96,12 @@ struct plane_t {
 
 struct bounded_plane_t {
     plane_t plane; 
-    /* a, b is begin corrds and c, d are "length" or "width" of a, b respectively */
-    /* c, d must be positive */
-    /* if normal axis is x then these are y, z coords */
-    /* if normal axis is y then these are x, z coords */
-    /* if normal axis is z then these are x, y coords */
+    /* a, b is begin coords with respect to plane.pos
+     * c, d are "length" or "width" of a, b respectively
+     * c, d must be positive
+     * if normal axis is x then these are y, z coords
+     * if normal axis is y then these are x, z coords
+     * if normal axis is z then these are x, y coords */
     float a = 0, b = 0, c = 0, d = 0;
 };
 
@@ -219,8 +224,8 @@ void bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std:
             for (float t : thisout) {
                 const vec3_t pos = line.f(t);
                 /* is bad / outside */
-                if ((pos.y < bounded_plane.a || pos.y > bounded_plane.a + bounded_plane.c) ||
-                    (pos.z < bounded_plane.b || pos.z > bounded_plane.b + bounded_plane.d)) {
+                if ((pos.y - bounded_plane.plane.pos.y < bounded_plane.a || pos.y - bounded_plane.plane.pos.y > bounded_plane.a + bounded_plane.c) ||
+                    (pos.z - bounded_plane.plane.pos.z < bounded_plane.b || pos.z - bounded_plane.plane.pos.z > bounded_plane.b + bounded_plane.d)) {
                     continue;
                 }
                 out.push_back(t);
@@ -230,8 +235,8 @@ void bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std:
             for (float t : thisout) {
                 const vec3_t pos = line.f(t);
                 /* is bad / outside */
-                if ((pos.x < bounded_plane.a || pos.x > bounded_plane.a + bounded_plane.c) ||
-                    (pos.z < bounded_plane.b || pos.z > bounded_plane.b + bounded_plane.d)) {
+                if ((pos.x - bounded_plane.plane.pos.x < bounded_plane.a || pos.x - bounded_plane.plane.pos.x > bounded_plane.a + bounded_plane.c) ||
+                    (pos.z - bounded_plane.plane.pos.z < bounded_plane.b || pos.z - bounded_plane.plane.pos.z > bounded_plane.b + bounded_plane.d)) {
                     continue;
                 }
                 out.push_back(t);
@@ -241,8 +246,8 @@ void bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std:
             for (float t : thisout) {
                 const vec3_t pos = line.f(t);
                 /* is bad / outside */
-                if ((pos.x < bounded_plane.a || pos.x > bounded_plane.a + bounded_plane.c) ||
-                    (pos.y < bounded_plane.b || pos.y > bounded_plane.b + bounded_plane.d)) {
+                if ((pos.x - bounded_plane.plane.pos.x < bounded_plane.a || pos.x - bounded_plane.plane.pos.x > bounded_plane.a + bounded_plane.c) ||
+                    (pos.y - bounded_plane.plane.pos.y < bounded_plane.b || pos.y - bounded_plane.plane.pos.y > bounded_plane.b + bounded_plane.d)) {
                     continue;
                 }
                 out.push_back(t);
@@ -279,7 +284,7 @@ void g_intersect(const line_t &line, const gobj_t &gobj, std::vector<float> &out
 
 
 vec3_t p_reflect(const vec3_t &vec, const plane_t &plane) {
-    return vec - plane.normal * vec.dot(plane.normal) * 2.0f;
+    return vec - plane.normal.normalized() * vec.dot(plane.normal.normalized()) * 2.0f;
 }
 
 
@@ -361,7 +366,7 @@ std::uint64_t get_current_time() {
 
 int main() {
     constexpr float fps = 60.0f;
-    constexpr std::uint32_t max_light_bounces = 5;
+    constexpr std::uint32_t max_light_bounces = 20;
 
     const std::wstring gradient = L" ._,'`^\"-~:;=!><+?|][}{)(\\/trxnuovczmwaihqpdbkfjl1XYFGHNUJICLQO0Z#MW&8%B@$";
     const auto gradient_length = static_cast<std::int32_t>(gradient.length());
@@ -429,7 +434,10 @@ int main() {
 
     /* planar mirrors */
     scene.objects.push_back(new gobj_t{
-        plane_t{vec3_t(0, 0, 105), vec3_t(0, 0, -1)},
+        bounded_plane_t{
+            plane_t{vec3_t(0, 0, 105), vec3_t(0, 0, -1)},
+            -200, -200, 400, 400
+        },
         {0, 0, 0},
         true,
     });
@@ -453,21 +461,50 @@ int main() {
     /* lights */
     scene.objects.push_back(new gobj_t{
         light_t{
-            plane_t{vec3_t(100, 0, 0), vec3_t(-1, 0, 0)},
+            bounded_plane_t{
+                plane_t{vec3_t(100, 0, 0), vec3_t(-1, 0, 0)},
+                -200, -200, 400, 400
+            },
             []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
         },
         {255, 127, 127}
     });
     scene.objects.push_back(new gobj_t{
         light_t{
-            plane_t{vec3_t(-100, 0, 0), vec3_t(1, 0, 0)},
+            bounded_plane_t{
+                plane_t{vec3_t(-100, 0, 0), vec3_t(1, 0, 0)},
+                -200, -200, 400, 400
+            },
             []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
         },
         {255, 127, 127}
     });
     scene.objects.push_back(new gobj_t{
         light_t{
-            plane_t{vec3_t(0, 0, -30), vec3_t(0, 0, 1)},
+            bounded_plane_t{
+                plane_t{vec3_t(0, 0, -30), vec3_t(0, 0, 1)},
+                -200, -200, 400, 400
+            },
+            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
+        },
+        {255, 127, 127}
+    });
+    scene.objects.push_back(new gobj_t{
+        light_t{
+            bounded_plane_t{
+                plane_t{vec3_t(0, 100, 0), vec3_t(0, -1, 0)},
+                -200, -200, 400, 400
+            },
+            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
+        },
+        {255, 127, 127}
+    });
+    scene.objects.push_back(new gobj_t{
+        light_t{
+            bounded_plane_t{
+                plane_t{vec3_t(0, -100, 0), vec3_t(0, 1, 0)},
+                -200, -200, 400, 400
+            },
             []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
         },
         {255, 127, 127}
@@ -527,6 +564,7 @@ int main() {
 
                 std::int32_t light_bounces = 0;
                 const gobj_t *original_obj = nullptr;
+                const gobj_t *light = nullptr;
                 const gobj_t *last_obj = nullptr;
                 line_t line = ray;
                 float total_distance = 0.0f;
@@ -565,6 +603,7 @@ int main() {
                     total_distance += (line.pos - closest_pos).mod();
                     if (closest_obj->obj.index() == gtype_light) {
                         /* done, we are not reflecting off a light */
+                        light = closest_obj;
                         break;
                     }
                     vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc);
@@ -574,23 +613,27 @@ int main() {
 
 
                 rgb_t color;
-                /* separated ifs so as not to rely on short circuiting */
                 if (original_obj != nullptr) {
-                    color = original_obj->color * !original_obj->mirror + last_obj->color * original_obj->mirror; /* funny branchless */
-                    /* if (original_obj->mirror) {
+                    color = original_obj->color; /* * !original_obj->mirror + last_obj->color * original_obj->mirror *//* funny branchless */
+                    if (original_obj->mirror) {
                         color = last_obj->color;
-                    } */
+                    }
                 }
 
                 current_char = char_ex_info_t{L' ', {0, 0, 0}};
                 if (last_obj != nullptr) {
-                    if (last_obj->obj.index() != gtype_light) { /* never got illuminated */
+                    if (light == nullptr) { /* never got illuminated */
                         if (light_bounces > 0) {
                             current_char = char_ex_info_t{L'.', multiplier(color, minimum_color_multiplier)};
                         }
                     } else {
-                        const auto &tlight = std::get<light_t>(last_obj->obj);
+                        const auto &tlight = std::get<light_t>(light->obj);
                         float applied_light = tlight.strength(total_distance);
+                        if (light_bounces > 0) {
+                            color.x = static_cast<std::int32_t>(static_cast<float>(color.x * light->color.x) / 255.0f);
+                            color.y = static_cast<std::int32_t>(static_cast<float>(color.y * light->color.y) / 255.0f);
+                            color.z = static_cast<std::int32_t>(static_cast<float>(color.z * light->color.z) / 255.0f);
+                        }
                         current_char = char_ex_info_t{get_gradient(static_cast<float>(gradient_length - 1) * applied_light), multiplier(color, applied_light)};
                     }
                 }
