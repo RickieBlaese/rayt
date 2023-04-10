@@ -467,6 +467,10 @@ int main() {
     });
 
 
+    const auto light_strength_func = []([[maybe_unused]] float x) {
+        return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.1f;
+    };
+
     /* lights */
     scene.objects.push_back(new gobj_t{
         light_t{
@@ -474,7 +478,7 @@ int main() {
                 plane_t{vec3_t(100, 0, 0), vec3_t(-1, 0, 0)},
                 -200, -200, 400, 400
             },
-            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
+            light_strength_func
         },
         {255, 255, 255}
     });
@@ -484,7 +488,7 @@ int main() {
                 plane_t{vec3_t(-100, 0, 0), vec3_t(1, 0, 0)},
                 -200, -200, 400, 400
             },
-            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
+            light_strength_func
         },
         {255, 255, 255}
     });
@@ -494,7 +498,7 @@ int main() {
                 plane_t{vec3_t(0, 0, -30), vec3_t(0, 0, 1)},
                 -200, -200, 400, 400
             },
-            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
+            light_strength_func
         },
         {255, 255, 255}
     });
@@ -504,7 +508,7 @@ int main() {
                 plane_t{vec3_t(0, 100, 0), vec3_t(0, -1, 0)},
                 -200, -200, 400, 400
             },
-            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
+            light_strength_func
         },
         {255, 255, 255}
     });
@@ -514,7 +518,7 @@ int main() {
                 plane_t{vec3_t(0, -100, 0), vec3_t(0, 1, 0)},
                 -200, -200, 400, 400
             },
-            []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
+            light_strength_func
         },
         {255, 255, 255}
     });
