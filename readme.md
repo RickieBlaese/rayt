@@ -9,3 +9,6 @@ If on your terminal it hangs while starting up, it may be from a race condition 
 strace -o /dev/null ./rayt
 ```
 I won't pretend to know why it works, but most of the time it fixes it. Or you could just try another terminal emulator.
+
+
+Now you can generate your own gradients with `gradient.py`. Put your source chars for the gradient in `gradient_source_chars.txt` as demonstrated, and then run `python gradient.py <font file>` to order the characters by boldness. `<font file>` is a path to the font to use, and you probably want to use whatever font your terminal uses. Works with TrueType (`.otf`) and OpenType (`.ttf`) fonts.

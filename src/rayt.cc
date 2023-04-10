@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <fstream>
 #include <limits>
 #include <numbers>
 #include <random>
+#include <sstream>
 #include <variant>
 #include <vector>
 
@@ -366,9 +368,16 @@ std::uint64_t get_current_time() {
 
 int main() {
     constexpr float fps = 60.0f;
-    constexpr std::uint32_t max_light_bounces = 20;
+    constexpr std::uint32_t max_light_bounces = 10;
 
-    const std::wstring gradient = L" ._,'`^\"-~:;=!><+?|][}{)(\\/trxnuovczmwaihqpdbkfjl1XYFGHNUJICLQO0Z#MW&8%B@$";
+    /* const std::wstring gradient = L" ._,'`^\"-~:;=!><+?|][}{)(\\/trxnuovczmwaihqpdbkfjl1XYFGHNUJICLQO0Z#MW&8%B@$"; */
+    std::wstring gradient;
+    std::wifstream gradient_file("gradient.txt");
+    std::wstringstream ss;
+    ss << gradient_file.rdbuf();
+    gradient = ss.str();
+    gradient_file.close();
+
     const auto gradient_length = static_cast<std::int32_t>(gradient.length());
     const auto get_gradient = [&gradient, &gradient_length](float x) -> wchar_t {
         return gradient[std::clamp<std::int32_t>(static_cast<std::int32_t>(std::round(x)), 0, gradient_length - 1)];
@@ -454,7 +463,7 @@ int main() {
             plane_t{vec3_t(0, 0, 1), vec3_t(0, 0, -1)},
             -4, -4, 8, 8
         },
-        {255, 255, 255}
+        {255, 0, 255}
     });
 
 
@@ -467,7 +476,7 @@ int main() {
             },
             []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
         },
-        {255, 127, 127}
+        {255, 255, 255}
     });
     scene.objects.push_back(new gobj_t{
         light_t{
@@ -477,7 +486,7 @@ int main() {
             },
             []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
         },
-        {255, 127, 127}
+        {255, 255, 255}
     });
     scene.objects.push_back(new gobj_t{
         light_t{
@@ -487,7 +496,7 @@ int main() {
             },
             []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
         },
-        {255, 127, 127}
+        {255, 255, 255}
     });
     scene.objects.push_back(new gobj_t{
         light_t{
@@ -497,7 +506,7 @@ int main() {
             },
             []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
         },
-        {255, 127, 127}
+        {255, 255, 255}
     });
     scene.objects.push_back(new gobj_t{
         light_t{
@@ -507,7 +516,7 @@ int main() {
             },
             []([[maybe_unused]] float x) { return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.3f; }
         },
-        {255, 127, 127}
+        {255, 255, 255}
     });
 
     std::vector<float> itimes;
@@ -615,9 +624,6 @@ int main() {
                 rgb_t color;
                 if (original_obj != nullptr) {
                     color = original_obj->color; /* * !original_obj->mirror + last_obj->color * original_obj->mirror *//* funny branchless */
-                    if (original_obj->mirror) {
-                        color = last_obj->color;
-                    }
                 }
 
                 current_char = char_ex_info_t{L' ', {0, 0, 0}};
