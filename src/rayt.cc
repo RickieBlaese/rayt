@@ -95,7 +95,6 @@ struct plane_t {
     vec3_t pos, normal;
 };
 
-
 struct bounded_plane_t {
     plane_t plane; 
     /* a, b is begin coords with respect to plane.pos
@@ -116,6 +115,51 @@ struct sphere_t {
     }
 };
 
+struct rect_t {
+    vec3_t pos;
+    bounded_plane_t bottom, top, left, right, back, front;
+};
+
+/* size.x, size.y, size.z are width in that direction, should be positive 
+ * pos is the origin position, this should be the minimum
+ * coords of the cube, i.e. bottom left back vertex */
+rect_t create_rect(const vec3_t &pos, const vec3_t &size) {
+    return {
+        vec3_t(pos.x + size.x / 2.0f, pos.y + size.y / 2.0f, pos.z + size.z / 2.0f),
+        /* bottom */
+        bounded_plane_t{
+            plane_t{vec3_t(pos.x + size.x / 2.0f, pos.y, pos.z + size.z / 2.0f), vec3_t(0, -1, 0)},
+            -size.x / 2.0f, -size.z / 2.0f, size.x, size.z
+        },
+        /* top */
+        bounded_plane_t{
+            plane_t{vec3_t(pos.x + size.x / 2.0f, pos.y + size.y, pos.z + size.z / 2.0f), vec3_t(0, 1, 0)},
+            -size.x / 2.0f, -size.z / 2.0f, size.x, size.z
+        },
+        /* left */
+        bounded_plane_t{
+            plane_t{vec3_t(pos.x, pos.y + size.y / 2.0f, pos.z + size.z / 2.0f), vec3_t(-1, 0, 0)},
+            -size.y / 2.0f, -size.z / 2.0f, size.y, size.z
+        },
+        /* right */
+        bounded_plane_t{
+            plane_t{vec3_t(pos.x + size.x, pos.y + size.y / 2.0f, pos.z + size.z / 2.0f), vec3_t(1, 0, 0)},
+            -size.y / 2.0f, -size.z / 2.0f, size.y, size.z
+        },
+        /* back */
+        bounded_plane_t{
+            plane_t{vec3_t(pos.x + size.x / 2.0f, pos.y + size.y / 2.0f, pos.z), vec3_t(0, 0, -1)},
+            -size.x / 2.0f, -size.y / 2.0f, size.x, size.y
+        },
+        /* front */
+        bounded_plane_t{
+            plane_t{vec3_t(pos.x + size.x / 2.0f, pos.y + size.y / 2.0f, pos.z + size.z), vec3_t(0, 0, 1)},
+            -size.x / 2.0f, -size.y / 2.0f, size.x, size.y
+        }
+    };
+}
+
+
 /* general variant indices, to be compared with variant.index() */
 constexpr std::size_t gtype_sphere = 0;
 constexpr std::size_t gtype_plane = 1;
@@ -127,7 +171,7 @@ struct light_t {
     
     /* function for how quick the light strength should falloff based on distance (x) */
     std::function<float (float)> strength = [](float x) -> float {
-        /* this is just a step-down function from a to b */
+        /* this is just a smooth step-down function from a to b */
         const float a = 0, b = 200;
         x = std::clamp<float>(x, a, b);
         const float alpha = std::pow(std::numbers::e_v<float>, - (b - a) / (x - a));
@@ -284,17 +328,15 @@ void g_intersect(const line_t &line, const gobj_t &gobj, std::vector<float> &out
     }
 }
 
-
 vec3_t p_reflect(const vec3_t &vec, const plane_t &plane) {
     return vec - plane.normal.normalized() * vec.dot(plane.normal.normalized()) * 2.0f;
 }
-
 
 vec3_t s_reflect(const vec3_t &vec, const sphere_t &sphere, const vec3_t &pos) {
     return p_reflect(vec, sphere.normal_plane(pos));
 }
 
-/* reflects vec across the normal plane of gobj at pos */
+/* reflects vec across the nomal plane of gobj at pos */
 vec3_t g_reflect(const vec3_t &vec, const gobj_t &gobj, const vec3_t &pos, struct notcurses *nc) {
     if (gobj.obj.index() == gtype_sphere) {
         return s_reflect(vec, std::get<sphere_t>(gobj.obj), pos);
@@ -317,7 +359,6 @@ vec3_t g_reflect(const vec3_t &vec, const gobj_t &gobj, const vec3_t &pos, struc
     notcurses_stop(nc);
     ERR_EXIT("bad variant index: gobj.obj.index() = %zu", gobj.obj.index());
 }
-
 
 /* rotate vec around pos */
 vec3_t rotated_x_about(const vec3_t &vec, const vec3_t &pos, float theta) {
@@ -343,6 +384,31 @@ struct scene_t {
     std::vector<gobj_t*> objects;
     line_t camera_ray;
 };
+
+/* allocates gobj_t */
+void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror, const decltype(light_t::strength)& strength) {
+    for (const bounded_plane_t &bounded_plane : {rect.bottom, rect.top, rect.left, rect.right, rect.back, rect.front}) {
+        scene.objects.push_back(new gobj_t{
+            light_t{
+                bounded_plane,
+                strength
+            },
+            color,
+            mirror
+        });
+    }
+}
+
+void add_rect(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror) {
+    for (const bounded_plane_t &bounded_plane : {rect.bottom, rect.top, rect.left, rect.right, rect.back, rect.front}) {
+        scene.objects.push_back(new gobj_t{
+            bounded_plane,
+            color,
+            mirror
+        });
+    }
+}
+
 
 struct char_ex_info_t { /* NOLINT */
     wchar_t ch = L' ';
@@ -428,6 +494,7 @@ int main() {
     scene.camera_ray = line_t{vec3_t(0, 0, 0), vec3_t(0, 0, begin_draw_dist)};
     vec3_t &camera_pos = scene.camera_ray.pos;
     vec3_t &camera_n   = scene.camera_ray.n;
+    vec3_t base_camera_n = camera_n;
 
     
     /* spheres */
@@ -442,86 +509,32 @@ int main() {
 
 
     /* planar mirrors */
-    scene.objects.push_back(new gobj_t{
+    /* scene.objects.push_back(new gobj_t{
         bounded_plane_t{
             plane_t{vec3_t(0, 0, 105), vec3_t(0, 0, -1)},
             -200, -200, 400, 400
         },
         {0, 0, 0},
         true,
-    });
-    /* scene.objects.push_back(new gobj_t{
-        plane_t{vec3_t(0, 0, 5), vec3_t(0, 0, 1)},
-        {0, 0, 0},
-        true,
     }); */
 
-
     /* bounded planes */
-    scene.objects.push_back(new gobj_t{
+    add_rect(scene, create_rect(vec3_t(-20, -20, -100), vec3_t(40, 40, 40)), rgb_t(255, 99, 255), false);
+    /* scene.objects.push_back(new gobj_t{
         bounded_plane_t{
             plane_t{vec3_t(0, 0, 1), vec3_t(0, 0, -1)},
             -4, -4, 8, 8
         },
         {255, 0, 255}
-    });
+    }); */
 
 
     const auto light_strength_func = []([[maybe_unused]] float x) {
-        return std::pow(std::numbers::e_v<float>, -x/100.0f) + 0.1f;
+        return std::pow(std::numbers::e_v<float>, -x/500.0f) + 0.1f;
     };
 
     /* lights */
-    scene.objects.push_back(new gobj_t{
-        light_t{
-            bounded_plane_t{
-                plane_t{vec3_t(100, 0, 0), vec3_t(-1, 0, 0)},
-                -200, -200, 400, 400
-            },
-            light_strength_func
-        },
-        {255, 255, 255}
-    });
-    scene.objects.push_back(new gobj_t{
-        light_t{
-            bounded_plane_t{
-                plane_t{vec3_t(-100, 0, 0), vec3_t(1, 0, 0)},
-                -200, -200, 400, 400
-            },
-            light_strength_func
-        },
-        {255, 255, 255}
-    });
-    scene.objects.push_back(new gobj_t{
-        light_t{
-            bounded_plane_t{
-                plane_t{vec3_t(0, 0, -30), vec3_t(0, 0, 1)},
-                -200, -200, 400, 400
-            },
-            light_strength_func
-        },
-        {255, 255, 255}
-    });
-    scene.objects.push_back(new gobj_t{
-        light_t{
-            bounded_plane_t{
-                plane_t{vec3_t(0, 100, 0), vec3_t(0, -1, 0)},
-                -200, -200, 400, 400
-            },
-            light_strength_func
-        },
-        {255, 255, 255}
-    });
-    scene.objects.push_back(new gobj_t{
-        light_t{
-            bounded_plane_t{
-                plane_t{vec3_t(0, -100, 0), vec3_t(0, 1, 0)},
-                -200, -200, 400, 400
-            },
-            light_strength_func
-        },
-        {255, 255, 255}
-    });
+    add_rect_light(scene, create_rect(vec3_t(-200, -200, -200), vec3_t(400, 400, 400)), rgb_t(255, 255, 255), false, light_strength_func);
 
     std::vector<float> itimes;
     std::uint32_t dimy = 0, dimx = 0;
@@ -550,19 +563,20 @@ int main() {
         else if (chin == L'a') { move_d = {-x_move_speed, 0, 0}; }
         else if (chin == L'A') { move_d = {-x_move_speed * shift_multiplier, 0, 0}; }
 
-        else if (chin == L'j') { camera_n = rotated_x_about(camera_n, camera_pos,  angle_increment); camera_rotation_x += angle_increment; }
-        else if (chin == L'l') { camera_n = rotated_x_about(camera_n, camera_pos, -angle_increment); camera_rotation_x -= angle_increment; }
+        else if (chin == L'j') { camera_rotation_x += angle_increment; }
+        else if (chin == L'l') { camera_rotation_x -= angle_increment; }
         else if (chin == L'i' && camera_rotation_y < std::numbers::pi / 2.0f - angle_increment) {
-            camera_n = rotated_y_about(camera_n, camera_pos, angle_increment);
             camera_rotation_y += angle_increment;
         } else if (chin == L'k' && camera_rotation_y > - (std::numbers::pi / 2.0f - angle_increment)) {
-            camera_n = rotated_y_about(camera_n, camera_pos, -angle_increment);
             camera_rotation_y -= angle_increment;
         }
 
+        camera_n = rotated_x_about(rotated_y_about(base_camera_n, camera_pos, camera_rotation_y), camera_pos, camera_rotation_x);
+
         move_d = move_d.x_rotated(camera_rotation_x);
         camera_pos += move_d;
-        camera_n   += move_d;
+        camera_n += move_d;
+        base_camera_n += move_d;
 
 
         /* WARNING: all the following logic basically assumes scene.objects isn't empty */
