@@ -16,7 +16,7 @@ std::uint64_t get_current_time() {
 
 
 int main() {
-    constexpr float fps = 60.0f;
+    constexpr float fps = 360.0f;
 
     /* const std::wstring gradient = L" ._,'`^\"-~:;=!><+?|][}{)(\\/trxnuovczmwaihqpdbkfjl1XYFGHNUJICLQO0Z#MW&8%B@$"; */
     std::wstring gradient;
@@ -88,29 +88,55 @@ int main() {
     scene.objects.push_back(new gobj_t{
         bounded_plane_t{
             plane_t{vec3_t(0, 0, 105), vec3_t(0, 0, -1)},
-            -200, -200, 400, 400
+            -200, -20, 400, 400
         },
-        {0, 0, 0},
+        {0, 0, 0}, /* won't be applied */
         true,
     });
 
-    /* bounded planes */
-    add_rect(scene, create_rect(true, vec3_t(-20, -20, -50), vec3_t(40, 40, 40)), rgb_t(255, 99, 255), false);
-    /* scene.objects.push_back(new gobj_t{
+    scene.objects.push_back(new gobj_t{
+        plane_t{vec3_t(0, -20, 0), vec3_t(0, 1, 0)},
+        {200, 255, 200},
+    });
+    /* right wall */
+    scene.objects.push_back(new gobj_t{
         bounded_plane_t{
-            plane_t{vec3_t(0, 0, -1), vec3_t(0, 0, -1)},
-            -4, -4, 8, 8
+            plane_t{vec3_t(90, 0, 0), vec3_t(-1, 0, 0)},
+            -400, 0, 800, 800
         },
-        {255, 0, 255}
-    }); */
-
+        {255, 255, 255}
+    });
+    /* back wall */
+    scene.objects.push_back(new gobj_t{
+        bounded_plane_t{
+            plane_t{vec3_t(0, 0, -90), vec3_t(0, 0, 1)},
+            -400, 0, 800, 800
+        },
+        {255, 255, 255}
+    });
+    /* left wall */
+    scene.objects.push_back(new gobj_t{
+        bounded_plane_t{
+            plane_t{vec3_t(-90, 0, 0), vec3_t(1, 0, 0)},
+            -400, 0, 800, 800
+        },
+        {255, 255, 255}
+    });
+    add_rect(scene, create_rect(true, vec3_t(-20, -20, -50), vec3_t(40, 40, 40)), rgb_t(255, 99, 255), false);
 
     const auto light_strength_func = []([[maybe_unused]] float x) {
-        return std::pow(std::numbers::e_v<float>, -x/1000.0f);
+        return std::pow(std::numbers::e_v<float>, -x/3000.0f);
     };
 
     /* lights */
-    add_rect_light(scene, create_rect(false, vec3_t(-800, -800, -800), vec3_t(1600, 1600, 1600)), rgb_t(255, 255, 255), false, light_strength_func);
+    /* add_rect_light(scene, create_rect(false, vec3_t(-800, -800, -800), vec3_t(1600, 1600, 1600)), rgb_t(255, 255, 255), false, light_strength_func); */
+    scene.objects.push_back(new gobj_t{
+        plane_t{vec3_t(0, 500, 0), vec3_t(0, -1, 0)},
+        {255, 255, 200},
+        false,
+        true,
+        light_strength_func
+    });
 
     std::vector<float> itimes;
     std::uint32_t dimy = 0, dimx = 0;
@@ -119,6 +145,7 @@ int main() {
 
     while (true) {
         while (get_current_time() - last_time < wait_us_per_frame) {;}
+        std::uint64_t render_time = get_current_time() - last_time;
         last_time = get_current_time();
 
         ncplane_dim_yx(plane, &dimy, &dimx);
@@ -181,6 +208,7 @@ int main() {
         ncplane_printf_yx(plane, 3, 0, "nx: %-+4.2f ", camera_n.x);
         ncplane_printf_yx(plane, 4, 0, "ny: %-+4.2f ", camera_n.y);
         ncplane_printf_yx(plane, 5, 0, "nz: %-+4.2f ", camera_n.z);
+        ncplane_printf_yx(plane, 6, 0, "render: %lu µs ", render_time);
 
         notcurses_render(nc);
     }

@@ -93,28 +93,20 @@ rect_t create_rect(bool normal_outward, const vec3_t &pos, const vec3_t &size);
 constexpr std::size_t gtype_sphere = 0;
 constexpr std::size_t gtype_plane = 1;
 constexpr std::size_t gtype_bounded_plane = 2;
-constexpr std::size_t gtype_light = 3;
 
-struct light_t {
-    std::variant<sphere_t, plane_t, bounded_plane_t> obj;
-    
-    /* function for how quick the light strength should falloff based on distance (x) */
-    std::function<float (float)> strength = [](float x) -> float {
-        /* this is just a smooth step-down function from a to b */
-        const float a = 0, b = 200;
-        x = std::clamp<float>(x, a, b);
-        const float alpha = std::pow(std::numbers::e_v<float>, - (b - a) / (x - a));
-        const float beta  = std::pow(std::numbers::e_v<float>, - (b - a) / (b - x));
-        return 1.0f - alpha / (alpha + beta);
-    };
-};
+using shape_variant_t = std::variant<sphere_t, plane_t, bounded_plane_t>;
 
+float default_light_strength(float x);
 
 /* general object */
 struct gobj_t {
-    std::variant<sphere_t, plane_t, bounded_plane_t, light_t> obj;
+    shape_variant_t obj;
     rgb_t color;
     bool mirror = false;
+    bool light = false;
+    
+    /* function for how quick the light strength should falloff based on distance (x) */
+    float (*strength)(float) = default_light_strength;
 };
 
 enum struct axis_t : std::uint32_t {
@@ -161,7 +153,7 @@ std::uint64_t make_id() {
 struct scene_t {
     std::vector<gobj_t*> objects;
     line_t camera_ray;
-    std::uint32_t max_light_bounces = 5;
+    std::uint32_t max_light_bounces = 30;
     float minimum_color_multiplier = 0.0f;
     std::wstring gradient;
     wchar_t get_gradient(float x);
@@ -169,7 +161,7 @@ struct scene_t {
 };
 
 /* allocates gobj_t */
-void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror, const decltype(light_t::strength)& strength);
+void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror, const decltype(gobj_t::strength)& strength);
 
 void add_rect(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror);
 
