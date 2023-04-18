@@ -2,4 +2,4 @@
 # if this does not work and ends up with weird output, just comment it out
 export COLORTERM=24bit
 
-strace -o /dev/null ./rayt
+strace -o /dev/null ./rayt 16

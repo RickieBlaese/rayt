@@ -153,10 +153,12 @@ std::uint64_t make_id() {
 struct scene_t {
     std::vector<gobj_t*> objects;
     line_t camera_ray;
-    std::uint32_t max_light_bounces = 30;
+    std::uint32_t max_light_bounces = 20;
     float minimum_color_multiplier = 0.0f;
     std::wstring gradient;
+
     wchar_t get_gradient(float x);
+    void intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *&closest_obj, float &closest_t, struct notcurses *nc);
     void render_ray(const line_t &line, rgb_t &outcolor, wchar_t &outchar, struct notcurses *nc);
 };
 

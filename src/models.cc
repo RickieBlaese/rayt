@@ -26,7 +26,8 @@ line_t line_between(const vec3_t &p1, const vec3_t &p2) {
 }
 
 plane_t sphere_t::normal_plane(const vec3_t &loc) const {
-    return {loc, (loc - pos).normalized()};
+    /* multiplying by r accounts for inverse spheres, making the normal opposite if r is negative */
+    return {loc, ((loc - pos) * r).normalized()};
 }
 
 rect_t create_rect(bool normal_outward, const vec3_t &pos, const vec3_t &size) {
@@ -115,8 +116,8 @@ void s_intersect(const line_t &line, const sphere_t &sphere, std::vector<float> 
     if (discr < 0) {
         return;
     }
-    const float t1    = (-beta + std::sqrt(discr)) / (2 * alpha);
-    const float t2    = (-beta - std::sqrt(discr)) / (2 * alpha);
+    const float t1 = (-beta + std::sqrt(discr)) / (2 * alpha);
+    const float t2 = (-beta - std::sqrt(discr)) / (2 * alpha);
     out.push_back(t1);
     out.push_back(t2);
 }
@@ -136,7 +137,7 @@ void p_intersect(const line_t &line, const plane_t &plane, std::vector<float> &o
 }
 
 void bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std::vector<float> &out, struct notcurses *nc) {
-    static std::vector<float> thisout;
+    static thread_local std::vector<float> thisout;
     thisout.clear();
     p_intersect(line, bounded_plane.plane, thisout);
     axis_t axis = normal_to_axis(bounded_plane.plane.normal, nc);
@@ -223,8 +224,30 @@ wchar_t scene_t::get_gradient(float x) {
     return gradient[std::clamp<std::size_t>(static_cast<std::int32_t>(std::round(x)), 0, gradient.size() - 1)];
 }
 
+void scene_t::intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *&closest_obj, float &closest_t, struct notcurses *nc) {
+    static thread_local std::vector<float> itimes;
+    itimes.clear();
+    /* first, determine the closest intersection point out of all objects on the ray */
+    closest_t = std::numeric_limits<float>::max();
+    vec3_t closest_pos{closest_t, closest_t, closest_t}; /* closest_t is max value right now */
+    /* prgobj = pointer to (potential) reflecting gobj */
+    for (gobj_t *prgobj : objects) {
+        if (prgobj == last_obj) { continue; }
+        itimes.clear();
+        g_intersect(line, *prgobj, itimes, nc);
+        if (itimes.empty()) { continue; }
+        std::sort(itimes.begin(), itimes.end());
+        float current_t = itimes[0];
+        /* make sure that it is "forward" on the ray, since light has direction */
+        if (current_t < 0.0f) { continue; }
+        if (current_t < closest_t) {
+            closest_t = current_t;
+            closest_obj = prgobj;
+        }
+    }
+}
+
 void scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, struct notcurses *nc) {
-    static std::vector<float> itimes;
     std::int32_t light_bounces = 0;
     const gobj_t *original_obj = nullptr;
     const gobj_t *light = nullptr;
@@ -233,26 +256,10 @@ void scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, s
     float total_distance = 0.0f;
 
     for (light_bounces = 0; light_bounces < max_light_bounces; light_bounces++) {
-        /* first, determine the closest intersection point out of all objects on the ray */
+        gobj_t *closest_obj = nullptr;
         float closest_t = std::numeric_limits<float>::max();
-        const gobj_t *closest_obj = nullptr;
-        vec3_t closest_pos{closest_t, closest_t, closest_t}; /* closest_t is max value right now */
-        /* prgobj = pointer to (potential) reflecting gobj */
-        for (const gobj_t *prgobj : objects) {
-            if (prgobj == last_obj) { continue; }
-            itimes.clear();
-            g_intersect(line, *prgobj, itimes, nc);
-            if (itimes.empty()) { continue; }
-            std::sort(itimes.begin(), itimes.end());
-            float current_t = itimes[0];
-            /* make sure that it is "forward" on the ray, since light has direction */
-            if (current_t < 0.0f) { continue; }
-            if (current_t < closest_t) {
-                closest_t = current_t;
-                closest_pos = line.f(current_t);
-                closest_obj = prgobj;
-            }
-        }
+        intersect_ray(line, last_obj, closest_obj, closest_t, nc);
+        vec3_t closest_pos = line.f(closest_t);
 
         if (closest_obj == nullptr) {
             break;
