@@ -88,13 +88,18 @@ struct rect_t {
  * coords of the cube, i.e. bottom left back vertex */
 rect_t create_rect(bool normal_outward, const vec3_t &pos, const vec3_t &size);
 
+struct triangle_t {
+    vec3_t a, b, c;
+};
+
 
 /* general variant indices, to be compared with variant.index() */
 constexpr std::size_t gtype_sphere = 0;
 constexpr std::size_t gtype_plane = 1;
 constexpr std::size_t gtype_bounded_plane = 2;
+constexpr std::size_t gtype_triangle = 3;
 
-using shape_variant_t = std::variant<sphere_t, plane_t, bounded_plane_t>;
+using shape_variant_t = std::variant<sphere_t, plane_t, bounded_plane_t, triangle_t>;
 
 float default_light_strength(float x);
 
@@ -153,13 +158,14 @@ std::uint64_t make_id() {
 struct scene_t {
     std::vector<gobj_t*> objects;
     line_t camera_ray;
-    std::uint32_t max_light_bounces = 20;
+    std::uint32_t max_light_bounces = 500;
     float minimum_color_multiplier = 0.0f;
     std::wstring gradient;
 
     wchar_t get_gradient(float x);
     void intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *&closest_obj, float &closest_t, struct notcurses *nc);
-    void render_ray(const line_t &line, rgb_t &outcolor, wchar_t &outchar, struct notcurses *nc);
+    /* returns how many times it bounced light */
+    std::uint64_t render_ray(const line_t &line, rgb_t &outcolor, wchar_t &outchar, struct notcurses *nc);
 };
 
 /* allocates gobj_t */

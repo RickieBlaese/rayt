@@ -10,7 +10,6 @@
 
 #include <cstdlib>
 
-#include "common.h"
 #include "models.h"
 
 
@@ -21,7 +20,7 @@ std::uint64_t get_current_time() {
 
 
 int main(int argc, char **argv) {
-    constexpr float fps = 360.0f;
+    constexpr float fps = 60.0f;
     
     std::int64_t thread_count = 8;
     if (argc > 1) {
@@ -222,10 +221,11 @@ int main(int argc, char **argv) {
     std::uint32_t dimy = 0, dimx = 0;
     float camera_rotation_x = 0.0f; /* accounts for both x and z */
     float camera_rotation_y = 0.0f;
+    std::uint64_t total_bounce_count = 0;
 
     
     for (std::int32_t i = 0; i < thread_count; i++) {
-        auto render_region = [&](std::stop_token stoken, std::int32_t region_ind) {
+        auto render_region = [&](const std::stop_token &stoken, std::int32_t region_ind) {
             while (!stoken.stop_requested()) {
                 render_complete.arrive_and_wait();
                 auto [ay, by] = regions[region_ind];
@@ -240,7 +240,7 @@ int main(int argc, char **argv) {
 
                         itimes.clear();
                         thisout.clear();
-                        scene.render_ray(ray, current_color, current_char, nc);
+                        total_bounce_count += scene.render_ray(ray, current_color, current_char, nc);
 
                         while (!ncplane_mutex.try_lock()) {;}
                         ncplane_set_fg_rgb8(plane, current_color.x, current_color.y, current_color.z);
@@ -249,6 +249,7 @@ int main(int argc, char **argv) {
                         ncplane_mutex.unlock();
                     }
                 }
+                render_complete.arrive_and_wait();
             }
         };
         vthreads.push_back(new std::jthread(render_region, i));
@@ -293,7 +294,7 @@ int main(int argc, char **argv) {
             itimes.clear();
             thisout.clear();
             scene.intersect_ray(line_between(camera_pos, camera_n), nullptr, closest_obj, closest_t, nc);
-            std::erase_if(scene.objects, [&closest_obj](const gobj_t *pgobj) { return pgobj == closest_obj; });
+            std::erase_if(scene.objects, [&closest_obj](const gobj_t * const &pgobj) { return pgobj == closest_obj; });
         }
 
         camera_n = rotated_x_about(rotated_y_about(base_camera_n, camera_pos, camera_rotation_y), camera_pos, camera_rotation_x);
@@ -304,13 +305,14 @@ int main(int argc, char **argv) {
         base_camera_n += move_d;
 
 
-        /* WARNING: all the following logic basically assumes scene.objects isn't empty */
-
-
         regions.clear();
         partition(0, static_cast<std::int32_t>(dimy), static_cast<std::int32_t>(thread_count), regions);
 
         /* begin rendering */
+        total_bounce_count = 0;
+        render_complete.arrive_and_wait();
+
+        /* end rendering */
         render_complete.arrive_and_wait();
 
         while (!ncplane_mutex.try_lock()) {;}
@@ -321,13 +323,16 @@ int main(int argc, char **argv) {
         ncplane_printf_yx(plane, 3, 0, "nx: %-+4.2f ", camera_n.x);
         ncplane_printf_yx(plane, 4, 0, "ny: %-+4.2f ", camera_n.y);
         ncplane_printf_yx(plane, 5, 0, "nz: %-+4.2f ", camera_n.z);
-        ncplane_printf_yx(plane, 6, 0, "count: %zu ", scene.objects.size());
+        ncplane_printf_yx(plane, 6, 0, "obj count: %zu ", scene.objects.size());
         ncplane_printf_yx(plane, 7, 0, "render: %lu µs ", render_time);
+        ncplane_printf_yx(plane, 8, 0, "bounces: %lu ", total_bounce_count);
 
         notcurses_render(nc);
         ncplane_mutex.unlock();
     }
-    render_complete.arrive_and_drop();
+
+    render_complete.arrive_and_wait();
+    render_complete.arrive_and_wait();
 
     /* destructing jthreads and stopping them */
     for (std::jthread *jt : vthreads) {

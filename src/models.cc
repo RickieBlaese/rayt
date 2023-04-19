@@ -247,7 +247,7 @@ void scene_t::intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *
     }
 }
 
-void scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, struct notcurses *nc) {
+std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, struct notcurses *nc) {
     std::int32_t light_bounces = 0;
     const gobj_t *original_obj = nullptr;
     const gobj_t *light = nullptr;
@@ -302,6 +302,8 @@ void scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, s
             outcolor = multiplier(color, applied_light);
         }
     }
+
+    return light_bounces;
 }
 
 void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror, const decltype(gobj_t::strength)& strength) {
