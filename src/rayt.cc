@@ -2,6 +2,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <notcurses/notcurses.h>
 #include <thread>
 #include <limits>
 #include <mutex>
@@ -20,11 +21,18 @@ std::uint64_t get_current_time() {
 
 
 int main(int argc, char **argv) {
-    constexpr float fps = 60.0f;
+    float fps = 120.0f;
     
     std::int64_t thread_count = 8;
-    if (argc > 1) {
-        thread_count = std::strtol(argv[1], nullptr, 0);
+    for (std::int32_t i = 1; i < argc; i++) {
+        if (strlen(argv[i]) > 2) {
+            if (argv[i][0] != '-') { continue; }
+            if (argv[i][1] == 'j') {
+                thread_count = std::strtol(&argv[i][2], nullptr, 0);
+            } else if (argv[i][1] == 'f') {
+                fps = std::strtof(&argv[i][2], nullptr);
+            }
+        }
     }
 
     /* const std::wstring gradient = L" ._,'`^\"-~:;=!><+?|][}{)(\\/trxnuovczmwaihqpdbkfjl1XYFGHNUJICLQO0Z#MW&8%B@$"; */
@@ -72,9 +80,12 @@ int main(int argc, char **argv) {
     const float angle_increment = std::numbers::pi / 30.0f;
 
 
+    world_t world;
 
     /* --- add objects to scene --- */
-    scene_t scene;
+    auto *pscene = new scene_t;
+    scene_t &scene = *pscene;
+    world.scenes.push_back(pscene);
     scene.gradient = gradient;
     scene.camera_ray = line_t{vec3_t(0, 0, 0), vec3_t(0, 0, begin_draw_dist)};
     vec3_t &camera_pos = scene.camera_ray.pos;
@@ -82,74 +93,9 @@ int main(int argc, char **argv) {
     vec3_t base_camera_n = camera_n;
 
     
-    /* spheres */
-    /* scene.objects.push_back(new gobj_t{
-        sphere_t{vec3_t(0, 0, 30), 10.0f},
-        {0, 255, 0}
-    });
-    scene.objects.push_back(new gobj_t{
-        sphere_t{vec3_t(0, 0, 80), 20.0f},
-        {0, 0, 255}
-    }); */
-
-
-    /* planar mirrors */
-    /* scene.objects.push_back(new gobj_t{
-        bounded_plane_t{
-            plane_t{vec3_t(0, 0, 105), vec3_t(0, 0, -1)},
-            -200, -20, 400, 400
-        },
-        {0, 0, 0},
-        true,
-    }); */
-
-    /* back wall */
-    /* scene.objects.push_back(new gobj_t{
-        bounded_plane_t{
-            plane_t{vec3_t(0, 0, -130), vec3_t(0, 0, 1)},
-            -400, 0, 800, 400
-        },
-        {255, 200, 200}
-    }); */
-    /* floor */
-    /* scene.objects.push_back(new gobj_t{
-        bounded_plane_t{
-            plane_t{vec3_t(0, -20, 0), vec3_t(0, 1, 0)},
-            -800, -800, 1600, 1600
-        },
-        {255, 255, 255}
-    }); */
-
-    /* add_rect(scene, create_rect(true, vec3_t(-20, -20, -50), vec3_t(40, 40, 40)), rgb_t(255, 99, 255), false);
-    for (std::int32_t i = -2; i < 2; i++) {
-        for (std::int32_t j = -2; j < 2; j++) {
-            add_rect(scene, create_rect(true, vec3_t(10.0f * static_cast<float>(i), 20, 10.0f * static_cast<float>(j)), vec3_t(10, 10, 10)), rgb_t(255, 200, 255), false);
-        }
-    } */
-
     const auto light_strength_func = []([[maybe_unused]] float x) {
         return std::pow(std::numbers::e_v<float>, -x/3000.0f);
     };
-
-    /* lights */
-    /* add_rect_light(scene, create_rect(false, vec3_t(-800, -800, -800), vec3_t(1600, 1600, 1600)), rgb_t(255, 255, 255), false, light_strength_func); */
-    /* scene.objects.push_back(new gobj_t{
-        plane_t{vec3_t(0, 500, 0), vec3_t(0, -1, 0)},
-        {255, 255, 200},
-        false,
-        true,
-        light_strength_func
-    });
-    scene.objects.push_back(new gobj_t{
-        bounded_plane_t{
-            plane_t{vec3_t(100, -20, 0), vec3_t(-1, 0, 0)},
-            0, -400, 800, 1200
-        },
-        {255, 150, 150},
-        false,
-        true,
-        []([[maybe_unused]] float x) -> float { return 0.5f; }
-    }); */
 
     /* test spheres */
     scene.objects.push_back(new gobj_t{
@@ -163,17 +109,20 @@ int main(int argc, char **argv) {
 
 
     /* planar mirrors */
-    scene.objects.push_back(new gobj_t{
+    /* scene.objects.push_back(new gobj_t{
         bounded_plane_t{
             plane_t{vec3_t(0, 0, 105), vec3_t(0, 0, -1)},
             -200, -20, 400, 400
         },
-        {0, 0, 0}, /* won't be applied */
+        {0, 0, 0},
         true,
-    });
+    }); */
 
     scene.objects.push_back(new gobj_t{
-        plane_t{vec3_t(0, -20, 0), vec3_t(0, 1, 0)},
+        bounded_plane_t{
+            plane_t{vec3_t(0, -20, 0), vec3_t(0, 1, 0)},
+            -200, -200, 400, 400
+        },
         {200, 255, 200},
     });
     /* right wall */
@@ -192,25 +141,40 @@ int main(int argc, char **argv) {
         },
         {255, 255, 255}
     });
-    /* left wall */
-    scene.objects.push_back(new gobj_t{
+
+    /* add_rect(scene, create_rect(true, vec3_t(-20, -20, -50), vec3_t(40, 40, 40)), rgb_t(255, 99, 255), false); */
+    auto *portal_scene = new scene_t{
+        { new gobj_t{sphere_t{vec3_t(-110, 0, 0), 5.0f}, rgb_t(255, 0, 0)}, new gobj_t{plane_t{vec3_t(0, 100, 0), vec3_t(0, -1, 0)}, rgb_t(255, 255, 255), false, true, light_strength_func} }
+    };
+    world.scenes.push_back(portal_scene);
+    portal_scene->gradient = gradient;
+    auto *portal_plane = new gobj_t{
         bounded_plane_t{
-            plane_t{vec3_t(-90, 0, 0), vec3_t(1, 0, 0)},
-            -400, 0, 800, 800
+            plane_t{vec3_t(-100, 0, 0), vec3_t(1, 0, 0)},
+            -10, -10, 20, 20
         },
         {255, 255, 255}
-    });
-    add_rect(scene, create_rect(true, vec3_t(-20, -20, -50), vec3_t(40, 40, 40)), rgb_t(255, 99, 255), false);
+    };
+    portal_plane->portal = portal_scene;
+    scene.objects.push_back(portal_plane);
 
     /* lights */
     /* add_rect_light(scene, create_rect(false, vec3_t(-800, -800, -800), vec3_t(1600, 1600, 1600)), rgb_t(255, 255, 255), false, light_strength_func); */
-    scene.objects.push_back(new gobj_t{
+    /* scene.objects.push_back(new gobj_t{
         plane_t{vec3_t(0, 500, 0), vec3_t(0, -1, 0)},
         {255, 255, 200},
         false,
         true,
         light_strength_func
+    }); */
+    scene.objects.push_back(new gobj_t{
+        plane_t{vec3_t(0, 400, 0), vec3_t(0, -1, 0)},
+        {255, 255, 220},
+        false,
+        true,
+        light_strength_func
     });
+
 
     std::mutex ncplane_mutex;
     std::barrier render_complete(thread_count + 1);
@@ -238,9 +202,7 @@ int main(int argc, char **argv) {
                         wchar_t current_char = L' ';
                         rgb_t current_color;
 
-                        itimes.clear();
-                        thisout.clear();
-                        total_bounce_count += scene.render_ray(ray, current_color, current_char, nc);
+                        total_bounce_count += scene.render_ray(ray, current_color, current_char, 0.0f, nc);
 
                         while (!ncplane_mutex.try_lock()) {;}
                         ncplane_set_fg_rgb8(plane, current_color.x, current_color.y, current_color.z);
@@ -294,7 +256,10 @@ int main(int argc, char **argv) {
             itimes.clear();
             thisout.clear();
             scene.intersect_ray(line_between(camera_pos, camera_n), nullptr, closest_obj, closest_t, nc);
-            std::erase_if(scene.objects, [&closest_obj](const gobj_t * const &pgobj) { return pgobj == closest_obj; });
+            if (closest_obj != nullptr) {
+                delete closest_obj; /* does not modify closest_obj */
+                std::erase_if(scene.objects, [&closest_obj](const gobj_t * const &pgobj) { return pgobj == closest_obj; });
+            }
         }
 
         camera_n = rotated_x_about(rotated_y_about(base_camera_n, camera_pos, camera_rotation_y), camera_pos, camera_rotation_x);
@@ -303,6 +268,10 @@ int main(int argc, char **argv) {
         camera_pos += move_d;
         camera_n += move_d;
         base_camera_n += move_d;
+        std::uint64_t world_objects_count = 0;
+        for (const scene_t * const scene : world.scenes) {
+            world_objects_count += scene->objects.size();
+        }
 
 
         regions.clear();
@@ -323,16 +292,20 @@ int main(int argc, char **argv) {
         ncplane_printf_yx(plane, 3, 0, "nx: %-+4.2f ", camera_n.x);
         ncplane_printf_yx(plane, 4, 0, "ny: %-+4.2f ", camera_n.y);
         ncplane_printf_yx(plane, 5, 0, "nz: %-+4.2f ", camera_n.z);
-        ncplane_printf_yx(plane, 6, 0, "obj count: %zu ", scene.objects.size());
-        ncplane_printf_yx(plane, 7, 0, "render: %lu µs ", render_time);
-        ncplane_printf_yx(plane, 8, 0, "bounces: %lu ", total_bounce_count);
+        ncplane_printf_yx(plane, 6, 0, "scene obj: %zu ", scene.objects.size());
+        ncplane_printf_yx(plane, 7, 0, "world obj: %zu ", world_objects_count);
+        ncplane_printf_yx(plane, 8, 0, "render: %lu µs ", render_time);
+        ncplane_printf_yx(plane, 9, 0, "bounces: %lu ", total_bounce_count);
+        ncplane_putstr_yx(plane, 10, 0, "x regions: ");
+        for (std::int32_t i = 0; i < regions.size(); i++) {
+            ncplane_printf_yx(plane, i + 11, 0, "%i : %i ", regions[i].first, regions[i].second);
+        }
 
         notcurses_render(nc);
         ncplane_mutex.unlock();
     }
 
-    render_complete.arrive_and_wait();
-    render_complete.arrive_and_wait();
+    /* no idea why stuff gets blocked here, this does not fix */
 
     /* destructing jthreads and stopping them */
     for (std::jthread *jt : vthreads) {
@@ -340,8 +313,11 @@ int main(int argc, char **argv) {
         delete jt;
     }
 
-    for (gobj_t *gobj : scene.objects) {
-        delete gobj;
+    for (scene_t *scene : world.scenes) {
+        for (gobj_t *gobj : scene->objects) {
+            delete gobj;
+        }
+        delete scene;
     }
 
     bool s = notcurses_cantruecolor(nc);

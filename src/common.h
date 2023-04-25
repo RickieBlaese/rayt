@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <functional>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -15,6 +16,8 @@
 #include <notcurses/notcurses.h>
 
 void partition(std::int32_t a, std::int32_t b, std::int32_t count, std::vector<std::pair<std::int32_t, std::int32_t>>& out);
+
+float optional_min(std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc);
 
 
 #define ERR_EXIT(...) { \

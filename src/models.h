@@ -29,6 +29,7 @@ struct gvec3_t { /* NOLINT */
 
     float mod() const { return std::sqrt(x * x + y * y + z * z); }
     T dot(const gvec3_t<T> &other) const { return x * other.x + y * other.y + z * other.z; }
+    gvec3_t<T> cross(const gvec3_t<T> &other) const { return {y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x}; }
     gvec3_t<T> normalized() const { return *this / mod(); }
     gvec3_t<T> x_rotated(float theta) const { return {x * std::cos(theta) - z * std::sin(theta), y, x * std::sin(theta) + z * std::cos(theta)}; }
     gvec3_t<T> y_rotated(float theta) const { return {x, y * std::cos(theta) - z * std::sin(theta), y * std::sin(theta) + z * std::cos(theta)}; }
@@ -90,6 +91,15 @@ rect_t create_rect(bool normal_outward, const vec3_t &pos, const vec3_t &size);
 
 struct triangle_t {
     vec3_t a, b, c;
+    plane_t plane;
+    vec3_t center() const;
+};
+
+triangle_t create_triangle(const vec3_t &a, const vec3_t &b, const vec3_t &c);
+
+struct cylinder_t {
+    line_t l;
+    float r = 0;
 };
 
 
@@ -98,10 +108,13 @@ constexpr std::size_t gtype_sphere = 0;
 constexpr std::size_t gtype_plane = 1;
 constexpr std::size_t gtype_bounded_plane = 2;
 constexpr std::size_t gtype_triangle = 3;
+constexpr std::size_t gtype_cylinder = 4;
 
-using shape_variant_t = std::variant<sphere_t, plane_t, bounded_plane_t, triangle_t>;
+using shape_variant_t = std::variant<sphere_t, plane_t, bounded_plane_t, triangle_t, cylinder_t>;
 
 float default_light_strength(float x);
+
+struct scene_t;
 
 /* general object */
 struct gobj_t {
@@ -112,6 +125,8 @@ struct gobj_t {
     
     /* function for how quick the light strength should falloff based on distance (x) */
     float (*strength)(float) = default_light_strength;
+
+    scene_t *portal = nullptr;
 };
 
 enum struct axis_t : std::uint32_t {
@@ -123,14 +138,17 @@ axis_t normal_to_axis(const vec3_t &normal, struct notcurses *nc);
 vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc);
 
 
-void s_intersect(const line_t &line, const sphere_t &sphere, std::vector<float> &out);
+bool s_intersect(const line_t &line, const sphere_t &sphere, std::pair<float, float> &ptimes);
 
-void p_intersect(const line_t &line, const plane_t &plane, std::vector<float> &out);
+bool p_intersect(const line_t &line, const plane_t &plane, std::pair<float, float> &ptimes);
 
-void bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std::vector<float> &out, struct notcurses *nc);
+bool bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std::pair<float, float> &ptimes, struct notcurses *nc);
 
-/* out is a vector of the times (t) on the line that the intersect occured */
-void g_intersect(const line_t &line, const gobj_t &gobj, std::vector<float> &out, struct notcurses *nc);
+bool t_intersect(const line_t &line, const triangle_t &triangle, std::pair<float, float> &ptimes);
+
+bool cl_intersect(const line_t &line, const cylinder_t &cylinder, std::pair<float, float> &ptimes);
+
+bool g_intersect(const line_t &line, const gobj_t &gobj, std::pair<float, float> &ptimes, struct notcurses *nc);
 
 vec3_t p_reflect(const vec3_t &vec, const plane_t &plane);
 
@@ -158,14 +176,18 @@ std::uint64_t make_id() {
 struct scene_t {
     std::vector<gobj_t*> objects;
     line_t camera_ray;
-    std::uint32_t max_light_bounces = 500;
-    float minimum_color_multiplier = 0.0f;
+    std::uint32_t max_light_bounces = 20;
+    float minimum_color_multiplier = 0.05f;
     std::wstring gradient;
 
     wchar_t get_gradient(float x);
     void intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *&closest_obj, float &closest_t, struct notcurses *nc);
     /* returns how many times it bounced light */
-    std::uint64_t render_ray(const line_t &line, rgb_t &outcolor, wchar_t &outchar, struct notcurses *nc);
+    std::uint64_t render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, float init_distance, struct notcurses *nc);
+};
+
+struct world_t {
+    std::vector<scene_t*> scenes;
 };
 
 /* allocates gobj_t */

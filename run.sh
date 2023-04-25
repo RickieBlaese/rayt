@@ -2,6 +2,8 @@
 # if this does not work and ends up with weird output, just comment it out
 export COLORTERM=truecolor
 
+sudo false # to make sure we have sudo perms
+
 (sleep 2 && sudo killall -s SIGKILL strace) &
-strace -f -o /dev/null -D ./rayt
+strace -f -o /dev/null -D ./rayt -f120
 pidwait rayt

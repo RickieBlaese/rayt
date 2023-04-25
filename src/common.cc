@@ -14,3 +14,17 @@ void partition(std::int32_t a, std::int32_t b, std::int32_t count, std::vector<s
     }
     out.emplace_back(static_cast<float>(i) * per + static_cast<float>(a), b);
 }
+
+float optional_min(std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc) {
+    if (ptimes.first.has_value() && !ptimes.second.has_value()) {
+        return ptimes.first.value();
+    }
+    if (ptimes.second.has_value() && !ptimes.first.has_value()) {
+        return ptimes.second.value();
+    }
+    if (!ptimes.first.has_value() && !ptimes.second.has_value()) {
+        notcurses_stop(nc);
+        ERR_EXIT("pair passed with two empty optionals");
+    }
+    return std::min(ptimes.first.value(), ptimes.second.value());
+}
