@@ -278,65 +278,82 @@ void scene_t::intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *
 }
 
 std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, float init_distance, struct notcurses *nc) {
-    std::uint64_t light_bounces = 0;
-    const gobj_t *original_obj = nullptr;
-    const gobj_t *light = nullptr;
-    const gobj_t *last_obj = nullptr;
-    rgb_t color{255, 255, 255};
-    scene_t *current_scene = this;
-    line_t line = ray;
-    float total_distance = init_distance;
+    std::uint64_t total_light_bounces = 0;
+    rgb_t total_color;
+    float total_applied_light = 0.0f;
+    std::int32_t samples = 0;
 
-    for (light_bounces = 0; light_bounces < max_light_bounces; light_bounces++) {
-        gobj_t *closest_obj = nullptr;
-        float closest_t = std::numeric_limits<float>::max();
-        current_scene->intersect_ray(line, last_obj, closest_obj, closest_t, nc);
-        vec3_t closest_pos = line.f(closest_t);
+    for (samples = 0; samples < samples_per_ray; samples++) {
+        std::uint64_t light_bounces = 0;
+        const gobj_t *original_obj = nullptr;
+        const gobj_t *light = nullptr;
+        const gobj_t *last_obj = nullptr;
+        rgb_t color{255, 255, 255};
+        scene_t *current_scene = this;
+        line_t line = ray;
+        float total_distance = init_distance;
 
-        if (closest_obj == nullptr) {
-            break;
-        }
-        last_obj = closest_obj;
+        for (light_bounces = 0; light_bounces < max_light_bounces; light_bounces++) {
+            gobj_t *closest_obj = nullptr;
+            float closest_t = std::numeric_limits<float>::max();
+            current_scene->intersect_ray(line, last_obj, closest_obj, closest_t, nc);
+            vec3_t closest_pos = line.f(closest_t);
 
-        if (original_obj == nullptr && !closest_obj->mirror && closest_obj->portal == nullptr) {
-            original_obj = closest_obj;
-            color = closest_obj->color;
-        }
-        total_distance += (line.pos - closest_pos).mod();
-        line.pos = closest_pos;
-        if (closest_obj->portal != nullptr) {
-            current_scene = closest_obj->portal;
-            continue;
-        }
+            if (closest_obj == nullptr) {
+                break;
+            }
+            last_obj = closest_obj;
 
-        if (closest_obj->light) {
-            /* done, we are not reflecting off a light */
-            light = closest_obj;
-            break;
+            if (original_obj == nullptr && !closest_obj->mirror && closest_obj->portal == nullptr) {
+                original_obj = closest_obj;
+                color = closest_obj->color;
+            }
+            total_distance += (line.pos - closest_pos).mod();
+            line.pos = closest_pos;
+            if (closest_obj->portal != nullptr) {
+                current_scene = closest_obj->portal;
+                continue;
+            }
+
+            if (closest_obj->light) {
+                /* done, we are not reflecting off a light */
+                light = closest_obj;
+                break;
+            }
+            vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc);
+            newvec = newvec.x_rotated(get_random_real(-closest_obj->roughness / 2.0f, closest_obj->roughness / 2.0f));
+            newvec = newvec.y_rotated(get_random_real(-closest_obj->roughness / 2.0f, closest_obj->roughness / 2.0f));
+            line.n = newvec;
         }
-        vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc);
-        line.n = newvec;
+        total_light_bounces += light_bounces;
+
+
+        if (last_obj != nullptr) {
+            if (light == nullptr && light_bounces > 0) { /* never got illuminated */
+                total_applied_light += 1.0f / static_cast<float>(gradient.size());
+                total_color += multiplier(color, minimum_color_multiplier);
+            } else {
+                float applied_light = light->strength(total_distance);
+                if (light_bounces > 0) {
+                    color.x = static_cast<std::int32_t>(static_cast<float>(color.x * light->color.x) / 255.0f);
+                    color.y = static_cast<std::int32_t>(static_cast<float>(color.y * light->color.y) / 255.0f);
+                    color.z = static_cast<std::int32_t>(static_cast<float>(color.z * light->color.z) / 255.0f);
+                }
+                total_applied_light += applied_light;
+                total_color += color;
+            }
+        }
     }
+    
+    total_applied_light /= static_cast<float>(samples);
+    outchar = get_gradient(static_cast<float>(gradient.size() - 1) * total_applied_light);
+    total_applied_light /= static_cast<float>(samples);
+    outcolor = multiplier(total_color, total_applied_light);
 
-
-    if (last_obj != nullptr) {
-        if (light == nullptr && light_bounces > 0) { /* never got illuminated */
-            outchar = L'.';
-            outcolor = multiplier(color, minimum_color_multiplier);
-        } else {
-            color.x = static_cast<std::int32_t>(static_cast<float>(color.x * light->color.x) / 255.0f);
-            color.y = static_cast<std::int32_t>(static_cast<float>(color.y * light->color.y) / 255.0f);
-            color.z = static_cast<std::int32_t>(static_cast<float>(color.z * light->color.z) / 255.0f);
-            float applied_light = light->strength(total_distance);
-            outchar = get_gradient(static_cast<float>(gradient.size() - 1) * applied_light);
-            outcolor = multiplier(color, applied_light);
-        }
-    }
-
-    return light_bounces;
+    return total_light_bounces;
 }
 
-void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror, const decltype(gobj_t::strength)& strength) {
+void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror, const decltype(gobj_t::strength) &strength) {
     for (const bounded_plane_t &bounded_plane : {rect.bottom, rect.top, rect.left, rect.right, rect.back, rect.front}) {
         scene.objects.push_back(new gobj_t{
             bounded_plane,

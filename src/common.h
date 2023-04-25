@@ -5,6 +5,7 @@
 #include <functional>
 #include <numbers>
 #include <optional>
+#include <random>
 #include <string>
 #include <variant>
 #include <vector>
@@ -18,6 +19,13 @@
 void partition(std::int32_t a, std::int32_t b, std::int32_t count, std::vector<std::pair<std::int32_t, std::int32_t>>& out);
 
 float optional_min(std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc);
+
+template <typename T>
+T get_random_real(T a, T b) {
+    static std::random_device device{};
+    static std::default_random_engine engine(device());
+    return std::uniform_real_distribution(a, b)(engine);
+}
 
 
 #define ERR_EXIT(...) { \

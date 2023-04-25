@@ -22,6 +22,7 @@ std::uint64_t get_current_time() {
 
 int main(int argc, char **argv) {
     float fps = 120.0f;
+    std::uint64_t samples_per_ray = 5;
     
     std::int64_t thread_count = 8;
     for (std::int32_t i = 1; i < argc; i++) {
@@ -31,6 +32,8 @@ int main(int argc, char **argv) {
                 thread_count = std::strtol(&argv[i][2], nullptr, 0);
             } else if (argv[i][1] == 'f') {
                 fps = std::strtof(&argv[i][2], nullptr);
+            } else if (argv[i][1] == 's') {
+                samples_per_ray = std::strtol(&argv[i][2], nullptr, 0);
             }
         }
     }
@@ -85,6 +88,7 @@ int main(int argc, char **argv) {
     /* --- add objects to scene --- */
     auto *pscene = new scene_t;
     scene_t &scene = *pscene;
+    scene.samples_per_ray = samples_per_ray;
     world.scenes.push_back(pscene);
     scene.gradient = gradient;
     scene.camera_ray = line_t{vec3_t(0, 0, 0), vec3_t(0, 0, begin_draw_dist)};
@@ -126,26 +130,31 @@ int main(int argc, char **argv) {
         {200, 255, 200},
     });
     /* right wall */
-    scene.objects.push_back(new gobj_t{
+    /* scene.objects.push_back(new gobj_t{
         bounded_plane_t{
             plane_t{vec3_t(90, 0, 0), vec3_t(-1, 0, 0)},
             -400, 0, 800, 800
         },
         {255, 255, 255}
-    });
+    }); */
     /* back wall */
-    scene.objects.push_back(new gobj_t{
+    /* scene.objects.push_back(new gobj_t{
         bounded_plane_t{
             plane_t{vec3_t(0, 0, -90), vec3_t(0, 0, 1)},
             -400, 0, 800, 800
         },
         {255, 255, 255}
-    });
+    }); */
 
     /* add_rect(scene, create_rect(true, vec3_t(-20, -20, -50), vec3_t(40, 40, 40)), rgb_t(255, 99, 255), false); */
     auto *portal_scene = new scene_t{
-        { new gobj_t{sphere_t{vec3_t(-110, 0, 0), 5.0f}, rgb_t(255, 0, 0)}, new gobj_t{plane_t{vec3_t(0, 100, 0), vec3_t(0, -1, 0)}, rgb_t(255, 255, 255), false, true, light_strength_func} }
+        {
+            new gobj_t{sphere_t{vec3_t(-110, 0, 0), 5.0f}, rgb_t(255, 0, 0)},
+            new gobj_t{plane_t{vec3_t(0, 100, 0), vec3_t(0, -1, 0)}, rgb_t(255, 255, 255), false, true, light_strength_func},
+            new gobj_t{plane_t{vec3_t(0, -5.0f, 0), vec3_t(0, 1, 0)}, rgb_t(255, 255, 255)}
+        }
     };
+    portal_scene->samples_per_ray = 2.0f;
     world.scenes.push_back(portal_scene);
     portal_scene->gradient = gradient;
     auto *portal_plane = new gobj_t{

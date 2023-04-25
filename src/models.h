@@ -127,6 +127,7 @@ struct gobj_t {
     float (*strength)(float) = default_light_strength;
 
     scene_t *portal = nullptr;
+    float roughness = 0.1f;
 };
 
 enum struct axis_t : std::uint32_t {
@@ -177,6 +178,7 @@ struct scene_t {
     std::vector<gobj_t*> objects;
     line_t camera_ray;
     std::uint32_t max_light_bounces = 20;
+    std::uint32_t samples_per_ray = 10;
     float minimum_color_multiplier = 0.05f;
     std::wstring gradient;
 
@@ -191,7 +193,7 @@ struct world_t {
 };
 
 /* allocates gobj_t */
-void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror, const decltype(gobj_t::strength)& strength);
+void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror, const decltype(gobj_t::strength) &strength);
 
 void add_rect(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror);
 
