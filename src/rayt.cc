@@ -107,8 +107,10 @@ int main(int argc, char **argv) {
         {0, 255, 0}
     });
     scene.objects.push_back(new gobj_t{
-        sphere_t{vec3_t(0, 0, 80), 20.0f},
-        {0, 0, 255}
+        .obj = sphere_t{vec3_t(0, 0, 80), 20.0f},
+        .color = {0, 0, 255},
+        .transparent = true,
+        .opacity = 1.0f
     });
 
 
@@ -269,6 +271,18 @@ int main(int argc, char **argv) {
                 delete closest_obj; /* does not modify closest_obj */
                 std::erase_if(scene.objects, [&closest_obj](const gobj_t * const &pgobj) { return pgobj == closest_obj; });
             }
+        }
+
+        else if (chin == L't') {
+            std::string in;
+            while (true) {
+                std::uint32_t chin = notcurses_get_blocking(nc, nullptr);
+                if (chin == L'\\') {
+                    break;
+                }
+                in.push_back(static_cast<char>(chin));
+            }
+            base_camera_n.z += std::strtof(in.c_str(), nullptr);
         }
 
         camera_n = rotated_x_about(rotated_y_about(base_camera_n, camera_pos, camera_rotation_y), camera_pos, camera_rotation_x);

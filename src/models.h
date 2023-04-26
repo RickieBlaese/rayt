@@ -127,7 +127,10 @@ struct gobj_t {
     float (*strength)(float) = default_light_strength;
 
     scene_t *portal = nullptr;
-    float roughness = 0.1f;
+    float roughness = 0.0f;
+    bool transparent = false;
+    float opacity = 1.0f;
+    bool hidden = false;
 };
 
 enum struct axis_t : std::uint32_t {

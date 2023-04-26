@@ -261,7 +261,7 @@ void scene_t::intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *
     vec3_t closest_pos{closest_t, closest_t, closest_t}; /* closest_t is max value right now */
     /* prgobj = pointer to (potential) reflecting gobj */
     for (gobj_t *prgobj : objects) {
-        if (prgobj == last_obj) { continue; }
+        if (prgobj == last_obj || prgobj->hidden) { continue; }
         ptimes.first.reset();
         ptimes.second.reset();
         if (!g_intersect(line, *prgobj, ptimes, nc)) {
@@ -312,6 +312,13 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
             line.pos = closest_pos;
             if (closest_obj->portal != nullptr) {
                 current_scene = closest_obj->portal;
+                continue;
+            }
+            if (closest_obj->transparent) {
+                /* color.x = static_cast<std::int32_t>(static_cast<float>(color.x * closest_obj->color.x) * closest_obj->opacity / 255.0f);
+                color.y = static_cast<std::int32_t>(static_cast<float>(color.y * closest_obj->color.y) * closest_obj->opacity / 255.0f);
+                color.z = static_cast<std::int32_t>(static_cast<float>(color.z * closest_obj->color.z) * closest_obj->opacity / 255.0f); */
+                color = multiplier(color, 1.0f - closest_obj->opacity) + multiplier(closest_obj->color, closest_obj->opacity);
                 continue;
             }
 
