@@ -22,9 +22,10 @@ std::uint64_t get_current_time() {
 
 int main(int argc, char **argv) {
     float fps = 120.0f;
-    std::uint64_t samples_per_ray = 5;
+    std::uint64_t samples_per_ray = 1;
+    std::uint32_t max_light_bounces = 20;
     
-    std::int64_t thread_count = 8;
+    std::int64_t thread_count = 2;
     for (std::int32_t i = 1; i < argc; i++) {
         if (strlen(argv[i]) > 2) {
             if (argv[i][0] != '-') { continue; }
@@ -34,11 +35,12 @@ int main(int argc, char **argv) {
                 fps = std::strtof(&argv[i][2], nullptr);
             } else if (argv[i][1] == 's') {
                 samples_per_ray = std::strtol(&argv[i][2], nullptr, 0);
+            } else if (argv[i][1] == 'm') {
+                max_light_bounces = std::strtol(&argv[i][2], nullptr, 0);
             }
         }
     }
 
-    /* const std::wstring gradient = L" ._,'`^\"-~:;=!><+?|][}{)(\\/trxnuovczmwaihqpdbkfjl1XYFGHNUJICLQO0Z#MW&8%B@$"; */
     std::wstring gradient;
     std::wifstream gradient_file("gradient.txt");
     std::wstringstream ss;
@@ -89,12 +91,14 @@ int main(int argc, char **argv) {
     auto *pscene = new scene_t;
     scene_t &scene = *pscene;
     scene.samples_per_ray = samples_per_ray;
+    scene.max_light_bounces = max_light_bounces;
     world.scenes.push_back(pscene);
     scene.gradient = gradient;
     scene.camera_ray = line_t{vec3_t(0, 0, 0), vec3_t(0, 0, begin_draw_dist)};
     vec3_t &camera_pos = scene.camera_ray.pos;
     vec3_t &camera_n   = scene.camera_ray.n;
     vec3_t base_camera_n = camera_n;
+    gobj_t *grabbed_obj = nullptr;
 
     
     const auto light_strength_func = []([[maybe_unused]] float x) {
@@ -102,10 +106,14 @@ int main(int argc, char **argv) {
     };
 
     /* test spheres */
-    scene.objects.push_back(new gobj_t{
-        sphere_t{vec3_t(0, 0, 30), 20.0f},
-        {0, 255, 0}
-    });
+    auto *gfirst_sphere = new gobj_t{
+        .obj = sphere_t{vec3_t(0, 0, 30), 20.0f},
+        .color = {0, 255, 0},
+        .texture = [](const gobj_t &self, const vec3_t &pos) { return multiplier(self.color, std::clamp<float>(pos.mod() / 100.0f, 0.0f, 1.0f)); }
+    };
+    auto &first_sphere = std::get<sphere_t>(gfirst_sphere->obj);
+
+    scene.objects.push_back(gfirst_sphere);
     scene.objects.push_back(new gobj_t{
         .obj = sphere_t{vec3_t(0, 0, 80), 20.0f},
         .color = {0, 0, 255},
@@ -125,27 +133,35 @@ int main(int argc, char **argv) {
     }); */
 
     scene.objects.push_back(new gobj_t{
-        bounded_plane_t{
+        .obj = bounded_plane_t{
             plane_t{vec3_t(0, -20, 0), vec3_t(0, 1, 0)},
             -200, -200, 400, 400
         },
-        {200, 255, 200},
+        .color = {200, 255, 200}
     });
     /* right wall */
     /* scene.objects.push_back(new gobj_t{
-        bounded_plane_t{
+        .obj = bounded_plane_t{
             plane_t{vec3_t(90, 0, 0), vec3_t(-1, 0, 0)},
             -400, 0, 800, 800
         },
-        {255, 255, 255}
+        .color = {255, 255, 255}
     }); */
     /* back wall */
     /* scene.objects.push_back(new gobj_t{
-        bounded_plane_t{
+        .obj = bounded_plane_t{
             plane_t{vec3_t(0, 0, -90), vec3_t(0, 0, 1)},
             -400, 0, 800, 800
         },
-        {255, 255, 255}
+        .color = {255, 255, 255}
+    }); */
+    /* left wall */
+    /* scene.objects.push_back(new gobj_t{
+        .obj = bounded_plane_t{
+            plane_t{vec3_t(-90, 0, 0), vec3_t(1, 0, 0)},
+            -400, 0, 800, 800
+        },
+        .color = {255, 255, 255}
     }); */
 
     /* add_rect(scene, create_rect(true, vec3_t(-20, -20, -50), vec3_t(40, 40, 40)), rgb_t(255, 99, 255), false); */
@@ -197,6 +213,7 @@ int main(int argc, char **argv) {
     float camera_rotation_x = 0.0f; /* accounts for both x and z */
     float camera_rotation_y = 0.0f;
     std::uint64_t total_bounce_count = 0;
+    float grab_ray_t = 1.0f;
 
     
     for (std::int32_t i = 0; i < thread_count; i++) {
@@ -222,11 +239,11 @@ int main(int argc, char **argv) {
                         ncplane_mutex.unlock();
                     }
                 }
-                render_complete.arrive_and_wait();
             }
         };
         vthreads.push_back(new std::jthread(render_region, i));
     }
+
 
     while (true) {
         while (get_current_time() - last_time < wait_us_per_frame) {;}
@@ -235,9 +252,9 @@ int main(int argc, char **argv) {
 
         while (!ncplane_mutex.try_lock()) {;}
         ncplane_dim_yx(plane, &dimy, &dimx);
-        
         std::uint32_t chin = notcurses_get_nblock(nc, nullptr);
         ncplane_mutex.unlock();
+
         vec3_t move_d;
         if (chin == L'\t') { break; }
         else if (chin == L'q') { move_d.y =  y_move_speed; }
@@ -273,6 +290,24 @@ int main(int argc, char **argv) {
             }
         }
 
+        else if (chin == L'c' || chin == L'C') {
+            if (grabbed_obj == nullptr) {
+                float closest_t = std::numeric_limits<float>::max();
+                itimes.clear();
+                thisout.clear();
+                scene.intersect_ray(line_between(camera_pos, camera_n), nullptr, grabbed_obj, closest_t, nc);
+            } else {
+                grabbed_obj = nullptr;
+            }
+        }
+
+        else if (chin == L'x' || chin == L'X') {
+            grab_ray_t -= 0.1f;
+        }
+        else if (chin == L'v' || chin == L'V') {
+            grab_ray_t += 0.1f;
+        }
+
         else if (chin == L't') {
             std::string in;
             while (true) {
@@ -285,6 +320,7 @@ int main(int argc, char **argv) {
             base_camera_n.z += std::strtof(in.c_str(), nullptr);
         }
 
+
         camera_n = rotated_x_about(rotated_y_about(base_camera_n, camera_pos, camera_rotation_y), camera_pos, camera_rotation_x);
 
         move_d = move_d.x_rotated(camera_rotation_x);
@@ -296,15 +332,18 @@ int main(int argc, char **argv) {
             world_objects_count += scene->objects.size();
         }
 
+        /* first_sphere.pos.x = 3.0f * std::sin(static_cast<float>(last_time - begin_time) / 1'000'000.0f);
+        first_sphere.pos.y = 3.0f * std::cos(static_cast<float>(last_time - begin_time) / 1'000'000.0f); */
+        if (grabbed_obj != nullptr) {
+            vec3_t &grabbed_pos = gobj_pos(*grabbed_obj, nc);
+            grabbed_pos = line_between(camera_pos, camera_n).f(grab_ray_t);
+        }
 
         regions.clear();
         partition(0, static_cast<std::int32_t>(dimy), static_cast<std::int32_t>(thread_count), regions);
 
         /* begin rendering */
         total_bounce_count = 0;
-        render_complete.arrive_and_wait();
-
-        /* end rendering */
         render_complete.arrive_and_wait();
 
         while (!ncplane_mutex.try_lock()) {;}
@@ -319,9 +358,10 @@ int main(int argc, char **argv) {
         ncplane_printf_yx(plane, 7, 0, "world obj: %zu ", world_objects_count);
         ncplane_printf_yx(plane, 8, 0, "render: %lu µs ", render_time);
         ncplane_printf_yx(plane, 9, 0, "bounces: %lu ", total_bounce_count);
-        ncplane_putstr_yx(plane, 10, 0, "x regions: ");
+        ncplane_printf_yx(plane, 10, 0, "grabbed obj: %p ", grabbed_obj);
+        ncplane_putstr_yx(plane, 11, 0, "x regions: ");
         for (std::int32_t i = 0; i < regions.size(); i++) {
-            ncplane_printf_yx(plane, i + 11, 0, "%i : %i ", regions[i].first, regions[i].second);
+            ncplane_printf_yx(plane, i + 12, 0, "%i : %i ", regions[i].first, regions[i].second);
         }
 
         notcurses_render(nc);

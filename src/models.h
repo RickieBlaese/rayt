@@ -112,7 +112,11 @@ constexpr std::size_t gtype_cylinder = 4;
 
 using shape_variant_t = std::variant<sphere_t, plane_t, bounded_plane_t, triangle_t, cylinder_t>;
 
-float default_light_strength(float x);
+float default_light_strength([[maybe_unused]] float x);
+
+struct gobj_t;
+
+rgb_t default_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos);
 
 struct scene_t;
 
@@ -124,7 +128,9 @@ struct gobj_t {
     bool light = false;
     
     /* function for how quick the light strength should falloff based on distance (x) */
-    float (*strength)(float) = default_light_strength;
+    float (*strength)([[maybe_unused]] float x) = default_light_strength;
+    /* returns color based on world position */
+    rgb_t (*texture)([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) = default_texture;
 
     scene_t *portal = nullptr;
     float roughness = 0.0f;
@@ -139,7 +145,7 @@ enum struct axis_t : std::uint32_t {
 
 axis_t normal_to_axis(const vec3_t &normal, struct notcurses *nc);
 
-vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc);
+vec3_t &gobj_pos(gobj_t &gobj, struct notcurses *nc);
 
 
 bool s_intersect(const line_t &line, const sphere_t &sphere, std::pair<float, float> &ptimes);

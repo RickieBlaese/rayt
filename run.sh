@@ -5,5 +5,4 @@ export COLORTERM=truecolor
 sudo false # to make sure we have sudo perms
 
 (sleep 2 && sudo killall -s SIGKILL strace) &
-strace -f -o /dev/null -D ./rayt -f120 -s1
-pidwait rayt
+strace -f -o /dev/null -D ./rayt -f120

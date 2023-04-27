@@ -90,7 +90,7 @@ axis_t normal_to_axis(const vec3_t &normal, struct notcurses *nc) {
 }
 
 
-float default_light_strength(float x) {
+float default_light_strength([[maybe_unused]] float x) {
     /* this is just a smooth step-down function from a to b */
     const float a = 0, b = 200;
     x = std::clamp<float>(x, a, b);
@@ -99,7 +99,11 @@ float default_light_strength(float x) {
     return 1.0f - alpha / (alpha + beta);
 }
 
-vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc) {
+rgb_t default_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) {
+    return self.color;
+}
+
+vec3_t &gobj_pos(gobj_t &gobj, struct notcurses *nc) {
     if (gobj.obj.index() == gtype_sphere) {
         return std::get<sphere_t>(gobj.obj).pos;
     } else if (gobj.obj.index() == gtype_plane) {
@@ -289,6 +293,7 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
         const gobj_t *light = nullptr;
         const gobj_t *last_obj = nullptr;
         rgb_t color{255, 255, 255};
+        rgb_t light_color;
         scene_t *current_scene = this;
         line_t line = ray;
         float total_distance = init_distance;
@@ -306,7 +311,7 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
 
             if (original_obj == nullptr && !closest_obj->mirror && closest_obj->portal == nullptr) {
                 original_obj = closest_obj;
-                color = closest_obj->color;
+                color = closest_obj->texture(*closest_obj, closest_pos);
             }
             total_distance += (line.pos - closest_pos).mod();
             line.pos = closest_pos;
@@ -315,16 +320,17 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
                 continue;
             }
             if (closest_obj->transparent) {
-                /* color.x = static_cast<std::int32_t>(static_cast<float>(color.x * closest_obj->color.x) * closest_obj->opacity / 255.0f);
-                color.y = static_cast<std::int32_t>(static_cast<float>(color.y * closest_obj->color.y) * closest_obj->opacity / 255.0f);
-                color.z = static_cast<std::int32_t>(static_cast<float>(color.z * closest_obj->color.z) * closest_obj->opacity / 255.0f); */
-                color = multiplier(color, 1.0f - closest_obj->opacity) + multiplier(closest_obj->color, closest_obj->opacity);
+                rgb_t tcolor = multiplier(color, closest_obj->opacity) + multiplier(closest_obj->texture(*closest_obj, closest_pos), 1.0f - closest_obj->opacity);
+                color.x = static_cast<std::int32_t>(static_cast<float>(color.x * tcolor.x) / 255.0f);
+                color.y = static_cast<std::int32_t>(static_cast<float>(color.y * tcolor.y) / 255.0f);
+                color.z = static_cast<std::int32_t>(static_cast<float>(color.z * tcolor.z) / 255.0f);
                 continue;
             }
 
             if (closest_obj->light) {
                 /* done, we are not reflecting off a light */
                 light = closest_obj;
+                light_color = light->texture(*light, closest_pos);
                 break;
             }
             vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc);
@@ -342,9 +348,9 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
             } else {
                 float applied_light = light->strength(total_distance);
                 if (light_bounces > 0) {
-                    color.x = static_cast<std::int32_t>(static_cast<float>(color.x * light->color.x) / 255.0f);
-                    color.y = static_cast<std::int32_t>(static_cast<float>(color.y * light->color.y) / 255.0f);
-                    color.z = static_cast<std::int32_t>(static_cast<float>(color.z * light->color.z) / 255.0f);
+                    color.x = static_cast<std::int32_t>(static_cast<float>(color.x * light_color.x) / 255.0f);
+                    color.y = static_cast<std::int32_t>(static_cast<float>(color.y * light_color.y) / 255.0f);
+                    color.z = static_cast<std::int32_t>(static_cast<float>(color.z * light_color.z) / 255.0f);
                 }
                 total_applied_light += applied_light;
                 total_color += color;
