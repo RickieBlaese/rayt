@@ -91,11 +91,8 @@ rect_t create_rect(bool normal_outward, const vec3_t &pos, const vec3_t &size);
 
 struct triangle_t {
     vec3_t a, b, c;
-    plane_t plane;
-    vec3_t center() const;
+    plane_t plane() const;
 };
-
-triangle_t create_triangle(const vec3_t &a, const vec3_t &b, const vec3_t &c);
 
 struct cylinder_t {
     line_t l;
@@ -117,6 +114,8 @@ float default_light_strength([[maybe_unused]] float x);
 struct gobj_t;
 
 rgb_t default_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos);
+float default_opacity_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos);
+float default_roughness_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos);
 
 struct scene_t;
 
@@ -131,6 +130,8 @@ struct gobj_t {
     float (*strength)([[maybe_unused]] float x) = default_light_strength;
     /* returns color based on world position */
     rgb_t (*texture)([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) = default_texture;
+    float (*opacity_texture)([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) = default_opacity_texture;
+    float (*roughness_texture)([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) = default_roughness_texture;
 
     scene_t *portal = nullptr;
     float roughness = 0.0f;
@@ -145,7 +146,9 @@ enum struct axis_t : std::uint32_t {
 
 axis_t normal_to_axis(const vec3_t &normal, struct notcurses *nc);
 
-vec3_t &gobj_pos(gobj_t &gobj, struct notcurses *nc);
+vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc);
+
+void gobj_set_pos(gobj_t &gobj, const vec3_t &pos, struct notcurses *nc);
 
 
 bool s_intersect(const line_t &line, const sphere_t &sphere, std::pair<float, float> &ptimes);

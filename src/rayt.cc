@@ -1,15 +1,13 @@
 #include <barrier>
 #include <chrono>
+#include <concepts>
 #include <fstream>
 #include <iostream>
-#include <notcurses/notcurses.h>
 #include <thread>
 #include <limits>
 #include <mutex>
 #include <random>
 #include <sstream>
-
-#include <cstdlib>
 
 #include "models.h"
 
@@ -19,13 +17,13 @@ std::uint64_t get_current_time() {
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 }
 
-
 int main(int argc, char **argv) {
+    /* default values */
     float fps = 120.0f;
     std::uint64_t samples_per_ray = 1;
     std::uint32_t max_light_bounces = 20;
-    
     std::int64_t thread_count = 2;
+
     for (std::int32_t i = 1; i < argc; i++) {
         if (strlen(argv[i]) > 2) {
             if (argv[i][0] != '-') { continue; }
@@ -109,16 +107,20 @@ int main(int argc, char **argv) {
     auto *gfirst_sphere = new gobj_t{
         .obj = sphere_t{vec3_t(0, 0, 30), 20.0f},
         .color = {0, 255, 0},
-        .texture = [](const gobj_t &self, const vec3_t &pos) { return multiplier(self.color, std::clamp<float>(pos.mod() / 100.0f, 0.0f, 1.0f)); }
+        .texture = [](const gobj_t &self, const vec3_t &pos) { return multiplier(self.color, std::clamp<float>(pos.mod() / 50.0f, 0.0f, 1.0f)); }
     };
-    auto &first_sphere = std::get<sphere_t>(gfirst_sphere->obj);
-
     scene.objects.push_back(gfirst_sphere);
     scene.objects.push_back(new gobj_t{
         .obj = sphere_t{vec3_t(0, 0, 80), 20.0f},
         .color = {0, 0, 255},
         .transparent = true,
         .opacity = 1.0f
+    });
+
+    /* triangles */
+    scene.objects.push_back(new gobj_t{
+        .obj = triangle_t{vec3_t(-10, 20, 0), vec3_t(10, 20, 0), vec3_t(0, 30, 0)},
+        .color = {255, 0, 0}
     });
 
 
@@ -335,8 +337,7 @@ int main(int argc, char **argv) {
         /* first_sphere.pos.x = 3.0f * std::sin(static_cast<float>(last_time - begin_time) / 1'000'000.0f);
         first_sphere.pos.y = 3.0f * std::cos(static_cast<float>(last_time - begin_time) / 1'000'000.0f); */
         if (grabbed_obj != nullptr) {
-            vec3_t &grabbed_pos = gobj_pos(*grabbed_obj, nc);
-            grabbed_pos = line_between(camera_pos, camera_n).f(grab_ray_t);
+            gobj_set_pos(*grabbed_obj, line_between(camera_pos, camera_n).f(grab_ray_t), nc);
         }
 
         regions.clear();

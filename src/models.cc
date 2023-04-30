@@ -67,15 +67,7 @@ rect_t create_rect(bool normal_outward, const vec3_t &pos, const vec3_t &size) {
     };
 }
 
-vec3_t triangle_t::center() const { return (a + b + c) / 3.0f; }
-
-triangle_t create_triangle(const vec3_t &a, const vec3_t &b, const vec3_t &c) {
-    const vec3_t avg = (a + b + c) / 3.0f;
-    return triangle_t{
-        a, b, c,
-        plane_t{avg, (a - avg).cross(b - avg).normalized()}
-    };
-}
+plane_t triangle_t::plane() const { return {(a + b + c) / 3.0f, (b - a).cross(c - b).normalized()}; }
 
 axis_t normal_to_axis(const vec3_t &normal, struct notcurses *nc) {
     if (normal.x == 0 && normal.z == 0) {
@@ -103,16 +95,45 @@ rgb_t default_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] cons
     return self.color;
 }
 
-vec3_t &gobj_pos(gobj_t &gobj, struct notcurses *nc) {
+float default_opacity_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) {
+    return self.opacity;
+}
+
+float default_roughness_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) {
+    return self.roughness;
+}
+
+vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc) {
     if (gobj.obj.index() == gtype_sphere) {
         return std::get<sphere_t>(gobj.obj).pos;
     } else if (gobj.obj.index() == gtype_plane) {
         return std::get<plane_t>(gobj.obj).pos;
     } else if (gobj.obj.index() == gtype_bounded_plane) {
         return std::get<bounded_plane_t>(gobj.obj).plane.pos;
+    } else if (gobj.obj.index() == gtype_triangle) {
+        return std::get<triangle_t>(gobj.obj).plane().pos;
     }
     notcurses_stop(nc);
     ERR_EXIT("bad variant index: gobj.obj.index() = %zu", gobj.obj.index());
+}
+
+void gobj_set_pos(gobj_t &gobj, const vec3_t &pos, struct notcurses *nc) {
+    if (gobj.obj.index() == gtype_sphere) {
+        std::get<sphere_t>(gobj.obj).pos = pos;
+    } else if (gobj.obj.index() == gtype_plane) {
+        std::get<plane_t>(gobj.obj).pos = pos;
+    } else if (gobj.obj.index() == gtype_bounded_plane) {
+        std::get<bounded_plane_t>(gobj.obj).plane.pos = pos;
+    } else if (gobj.obj.index() == gtype_triangle) {
+        auto &triangle = std::get<triangle_t>(gobj.obj);
+        const vec3_t d = pos - triangle.plane().pos;
+        triangle.a = triangle.a + d;
+        triangle.b = triangle.b + d;
+        triangle.c = triangle.c + d;
+    } else {
+        notcurses_stop(nc);
+        ERR_EXIT("bad variant index: gobj.obj.index() = %zu", gobj.obj.index());
+    }
 }
 
 bool s_intersect(const line_t &line, const sphere_t &sphere, std::pair<std::optional<float>, std::optional<float>> &ptimes) {
@@ -151,6 +172,8 @@ bool p_intersect(const line_t &line, const plane_t &plane, std::pair<std::option
 
 bool bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc) {
     static thread_local std::pair<std::optional<float>, std::optional<float>> thisout;
+    thisout.first.reset();
+    thisout.second.reset();
     if (!p_intersect(line, bounded_plane.plane, thisout)) {
         return false;
     }
@@ -188,7 +211,29 @@ bool bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std:
     return true;
 }
 
-bool t_intersect(const line_t &line, const triangle_t &triangle, std::pair<std::optional<float>, std::optional<float>> &ptimes) {
+bool t_intersect(const line_t &line, const triangle_t &triangle, std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc) {
+    static thread_local std::pair<std::optional<float>, std::optional<float>> thisout;
+    thisout.first.reset();
+    thisout.second.reset();
+    const plane_t plane = triangle.plane();
+    if (!p_intersect(line, plane, thisout)) {
+        return false;
+    }
+    if (!thisout.first.has_value()) {
+        notcurses_stop(nc);
+        ERR_EXIT("p_intersect returned true but did not return an intersection point");
+    }
+    float t = thisout.first.value();
+    const vec3_t pos = line.f(t);
+    const vec3_t ab = (triangle.a + triangle.b) / 2.0f;
+    const vec3_t bc = (triangle.b + triangle.c) / 2.0f;
+    const vec3_t ca = (triangle.c + triangle.a) / 2.0f;
+    if (static_cast<bool>(std::signbit((ab - plane.pos).dot(pos - ab))) &&
+        static_cast<bool>(std::signbit((bc - plane.pos).dot(pos - bc))) &&
+        static_cast<bool>(std::signbit((ca - plane.pos).dot(pos - ca)))) {
+        ptimes.first = t;
+        return true;
+    }
     return false;
 }
 
@@ -216,6 +261,8 @@ bool g_intersect(const line_t &line, const gobj_t &gobj, std::pair<std::optional
         i = i || p_intersect(line, std::get<plane_t>(gobj.obj), ptimes);
     } else if (gobj.obj.index() == gtype_bounded_plane) {
         i = i || bp_intersect(line, std::get<bounded_plane_t>(gobj.obj), ptimes, nc);
+    } else if (gobj.obj.index() == gtype_triangle) {
+        i = i || t_intersect(line, std::get<triangle_t>(gobj.obj), ptimes, nc);
     } else {
         notcurses_stop(nc);
         ERR_EXIT("bad variant index: gobj.obj.index() = %zu", gobj.obj.index());
@@ -240,6 +287,8 @@ vec3_t g_reflect(const vec3_t &vec, const gobj_t &gobj, const vec3_t &pos, struc
         return p_reflect(vec, std::get<plane_t>(gobj.obj));
     } else if (gobj.obj.index() == gtype_bounded_plane) {
         return p_reflect(vec, std::get<bounded_plane_t>(gobj.obj).plane);
+    } else if (gobj.obj.index() == gtype_triangle) {
+        return p_reflect(vec, std::get<triangle_t>(gobj.obj).plane());
     }
     notcurses_stop(nc);
     ERR_EXIT("bad variant index: gobj.obj.index() = %zu", gobj.obj.index());
@@ -320,7 +369,8 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
                 continue;
             }
             if (closest_obj->transparent) {
-                rgb_t tcolor = multiplier(color, closest_obj->opacity) + multiplier(closest_obj->texture(*closest_obj, closest_pos), 1.0f - closest_obj->opacity);
+                float opacity = closest_obj->opacity_texture(*closest_obj, closest_pos);
+                rgb_t tcolor = multiplier(color, opacity) + multiplier(closest_obj->texture(*closest_obj, closest_pos), 1.0f - opacity);
                 color.x = static_cast<std::int32_t>(static_cast<float>(color.x * tcolor.x) / 255.0f);
                 color.y = static_cast<std::int32_t>(static_cast<float>(color.y * tcolor.y) / 255.0f);
                 color.z = static_cast<std::int32_t>(static_cast<float>(color.z * tcolor.z) / 255.0f);
@@ -334,8 +384,9 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
                 break;
             }
             vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc);
-            newvec = newvec.x_rotated(get_random_real(-closest_obj->roughness / 2.0f, closest_obj->roughness / 2.0f));
-            newvec = newvec.y_rotated(get_random_real(-closest_obj->roughness / 2.0f, closest_obj->roughness / 2.0f));
+            float roughness = closest_obj->roughness_texture(*closest_obj, closest_pos);
+            newvec = newvec.x_rotated(get_random_real(-roughness / 2.0f, roughness / 2.0f));
+            newvec = newvec.y_rotated(get_random_real(-roughness / 2.0f, roughness / 2.0f));
             line.n = newvec;
         }
         total_light_bounces += light_bounces;
