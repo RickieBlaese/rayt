@@ -2,6 +2,7 @@
 #define MODELS_H
 
 #include "common.h"
+#include <ratio>
 
 /* general vec3 */
 template <typename T>
@@ -61,16 +62,21 @@ struct plane_t {
     vec3_t pos, normal;
 };
 
-struct bounded_plane_t {
-    plane_t plane; 
-    /* a, b is begin coords with respect to plane.pos
-     * c, d are "length" or "width" of a, b respectively
-     * c, d must be positive
-     * if normal axis is x then these are y, z coords
-     * if normal axis is y then these are x, z coords
-     * if normal axis is z then these are x, y coords */
-    float a = 0, b = 0, c = 0, d = 0;
+
+/* convex only
+ * assumes they already lie on a single plane */
+template <std::uint32_t C> requires std::ratio_greater<std::ratio<C>, std::ratio<2>>::value
+struct polygon_t {
+    vec3_t v[C];
+    plane_t plane() const {
+        vec3_t acc;
+        for (std::uint32_t i = 0; i < C; i++) {
+            acc += v[i];
+        }
+        return {acc / static_cast<float>(C), (v[1] - v[0]).cross(v[2] - v[1]).normalized()};
+    }
 };
+
 
 struct sphere_t {
     vec3_t pos;
@@ -79,35 +85,33 @@ struct sphere_t {
     plane_t normal_plane(const vec3_t &loc) const;
 };
 
-struct rect_t {
+using rect_t = polygon_t<4>;
+
+using triangle_t = polygon_t<3>;
+
+struct rectprism_t {
     vec3_t pos;
-    bounded_plane_t bottom, top, left, right, back, front;
+    rect_t bottom, top, left, right, back, front;
 };
 
-/* size.x, size.y, size.z are width in that direction, should be positive 
+/* size.x, size.y, size.z are width in that directprismion, should be positive 
  * pos is the origin position, this should be the minimum
  * coords of the cube, i.e. bottom left back vertex */
-rect_t create_rect(bool normal_outward, const vec3_t &pos, const vec3_t &size);
-
-struct triangle_t {
-    vec3_t a, b, c;
-    plane_t plane() const;
-};
+rectprism_t create_rectprism(const vec3_t &pos, const vec3_t &size);
 
 struct cylinder_t {
     line_t l;
     float r = 0;
 };
 
-
 /* general variant indices, to be compared with variant.index() */
 constexpr std::size_t gtype_sphere = 0;
 constexpr std::size_t gtype_plane = 1;
-constexpr std::size_t gtype_bounded_plane = 2;
+constexpr std::size_t gtype_rect = 2;
 constexpr std::size_t gtype_triangle = 3;
 constexpr std::size_t gtype_cylinder = 4;
 
-using shape_variant_t = std::variant<sphere_t, plane_t, bounded_plane_t, triangle_t, cylinder_t>;
+using shape_variant_t = std::variant<sphere_t, plane_t, rect_t, triangle_t, cylinder_t>;
 
 float default_light_strength([[maybe_unused]] float x);
 
@@ -151,17 +155,16 @@ vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc);
 void gobj_set_pos(gobj_t &gobj, const vec3_t &pos, struct notcurses *nc);
 
 
-bool s_intersect(const line_t &line, const sphere_t &sphere, std::pair<float, float> &ptimes);
+bool s_intersect(const line_t &line, const sphere_t &sphere, std::pair<std::optional<float>, std::optional<float>> &ptimes);
 
-bool p_intersect(const line_t &line, const plane_t &plane, std::pair<float, float> &ptimes);
+bool p_intersect(const line_t &line, const plane_t &plane, std::pair<std::optional<float>, std::optional<float>> &ptimes);
 
-bool bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std::pair<float, float> &ptimes, struct notcurses *nc);
+template <std::uint32_t C>
+bool pg_intersect(const line_t &line, const polygon_t<C> &polygon, std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc);
 
-bool t_intersect(const line_t &line, const triangle_t &triangle, std::pair<float, float> &ptimes);
+bool cl_intersect(const line_t &line, const cylinder_t &cylinder, std::pair<std::optional<float>, std::optional<float>> &ptimes);
 
-bool cl_intersect(const line_t &line, const cylinder_t &cylinder, std::pair<float, float> &ptimes);
-
-bool g_intersect(const line_t &line, const gobj_t &gobj, std::pair<float, float> &ptimes, struct notcurses *nc);
+bool g_intersect(const line_t &line, const gobj_t &gobj, std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc);
 
 vec3_t p_reflect(const vec3_t &vec, const plane_t &plane);
 
@@ -205,9 +208,9 @@ struct world_t {
 };
 
 /* allocates gobj_t */
-void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror, const decltype(gobj_t::strength) &strength);
+void add_rectprism_light(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror, const decltype(gobj_t::strength) &strength);
 
-void add_rect(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror);
+void add_rectprism(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror);
 
 
 #endif

@@ -119,7 +119,7 @@ int main(int argc, char **argv) {
 
     /* triangles */
     scene.objects.push_back(new gobj_t{
-        .obj = triangle_t{vec3_t(-10, 20, 0), vec3_t(10, 20, 0), vec3_t(0, 30, 0)},
+        .obj = triangle_t{{vec3_t(-10, 20, 0), vec3_t(10, 20, 0), vec3_t(0, 30, 0)}},
         .color = {255, 0, 0}
     });
 
@@ -135,10 +135,10 @@ int main(int argc, char **argv) {
     }); */
 
     scene.objects.push_back(new gobj_t{
-        .obj = bounded_plane_t{
-            plane_t{vec3_t(0, -20, 0), vec3_t(0, 1, 0)},
-            -200, -200, 400, 400
-        },
+        .obj = rect_t{{
+            vec3_t(-200, -20, -200), vec3_t(-200, -20, 200),
+            vec3_t(200, -20, 200), vec3_t(200, -20, -200)
+        }},
         .color = {200, 255, 200}
     });
     /* right wall */
@@ -178,10 +178,10 @@ int main(int argc, char **argv) {
     world.scenes.push_back(portal_scene);
     portal_scene->gradient = gradient;
     auto *portal_plane = new gobj_t{
-        bounded_plane_t{
-            plane_t{vec3_t(-100, 0, 0), vec3_t(1, 0, 0)},
-            -10, -10, 20, 20
-        },
+        rect_t{{
+            vec3_t(-100, -10, -10), vec3_t(-100, 10, -10),
+            vec3_t(-100, 10, 10), vec3_t(-100, -10, 10)
+        }},
         {255, 255, 255}
     };
     portal_plane->portal = portal_scene;

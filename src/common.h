@@ -2,10 +2,12 @@
 #define COMMON_H
 
 #include <algorithm>
+#include <concepts>
 #include <functional>
 #include <numbers>
 #include <optional>
 #include <random>
+#include <ratio>
 #include <string>
 #include <variant>
 #include <vector>

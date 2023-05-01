@@ -30,44 +30,41 @@ plane_t sphere_t::normal_plane(const vec3_t &loc) const {
     return {loc, ((loc - pos)).normalized()};
 }
 
-rect_t create_rect(bool normal_outward, const vec3_t &pos, const vec3_t &size) {
-    const std::int32_t k = static_cast<std::int32_t>(normal_outward) * 2 - 1;
+rectprism_t create_rectprism(const vec3_t &pos, const vec3_t &size) {
     return {
         vec3_t(pos.x + size.x / 2.0f, pos.y + size.y / 2.0f, pos.z + size.z / 2.0f),
         /* bottom */
-        bounded_plane_t{
-            plane_t{vec3_t(pos.x + size.x / 2.0f, pos.y, pos.z + size.z / 2.0f), vec3_t(0, -1, 0) * k},
-            -size.x / 2.0f, -size.z / 2.0f, size.x, size.z
-        },
+        rect_t{{
+            pos, pos + vec3_t(0, 0, size.z),
+            pos + vec3_t(size.x, 0, size.z), pos + vec3_t(size.x, 0, 0)
+        }},
         /* top */
-        bounded_plane_t{
-            plane_t{vec3_t(pos.x + size.x / 2.0f, pos.y + size.y, pos.z + size.z / 2.0f), vec3_t(0, 1, 0) * k},
-            -size.x / 2.0f, -size.z / 2.0f, size.x, size.z
-        },
+        rect_t{{
+            pos + vec3_t(0, size.y, 0), pos + vec3_t(0, size.y, size.z),
+            pos + vec3_t(size.x, size.y, size.z), pos + vec3_t(size.x, size.y, 0)
+        }},
         /* left */
-        bounded_plane_t{
-            plane_t{vec3_t(pos.x, pos.y + size.y / 2.0f, pos.z + size.z / 2.0f), vec3_t(-1, 0, 0) * k},
-            -size.y / 2.0f, -size.z / 2.0f, size.y, size.z
-        },
+        rect_t{{
+            pos, pos + vec3_t(0, 0, size.z),
+            pos + vec3_t(0, size.y, size.z), pos + vec3_t(0, size.y, 0)
+        }},
         /* right */
-        bounded_plane_t{
-            plane_t{vec3_t(pos.x + size.x, pos.y + size.y / 2.0f, pos.z + size.z / 2.0f), vec3_t(1, 0, 0) * k},
-            -size.y / 2.0f, -size.z / 2.0f, size.y, size.z
-        },
+        rect_t{{
+            pos + vec3_t(size.x, 0, 0), pos + vec3_t(size.x, 0, size.z),
+            pos + vec3_t(size.x, size.y, size.z), pos + vec3_t(size.x, size.y, 0)
+        }},
         /* back */
-        bounded_plane_t{
-            plane_t{vec3_t(pos.x + size.x / 2.0f, pos.y + size.y / 2.0f, pos.z), vec3_t(0, 0, -1) * k},
-            -size.x / 2.0f, -size.y / 2.0f, size.x, size.y
-        },
+        rect_t{{
+            pos, pos + vec3_t(0, size.y, 0),
+            pos + vec3_t(size.x, size.y, 0), pos + vec3_t(size.x, 0, 0)
+        }},
         /* front */
-        bounded_plane_t{
-            plane_t{vec3_t(pos.x + size.x / 2.0f, pos.y + size.y / 2.0f, pos.z + size.z), vec3_t(0, 0, 1) * k},
-            -size.x / 2.0f, -size.y / 2.0f, size.x, size.y
-        }
+        rect_t{{
+            pos, pos + vec3_t(0, size.y, size.z),
+            pos + vec3_t(size.x, size.y, size.z), pos + vec3_t(size.x, 0, size.z)
+        }}
     };
 }
-
-plane_t triangle_t::plane() const { return {(a + b + c) / 3.0f, (b - a).cross(c - b).normalized()}; }
 
 axis_t normal_to_axis(const vec3_t &normal, struct notcurses *nc) {
     if (normal.x == 0 && normal.z == 0) {
@@ -108,8 +105,8 @@ vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc) {
         return std::get<sphere_t>(gobj.obj).pos;
     } else if (gobj.obj.index() == gtype_plane) {
         return std::get<plane_t>(gobj.obj).pos;
-    } else if (gobj.obj.index() == gtype_bounded_plane) {
-        return std::get<bounded_plane_t>(gobj.obj).plane.pos;
+    } else if (gobj.obj.index() == gtype_rect) {
+        return std::get<rect_t>(gobj.obj).plane().pos;
     } else if (gobj.obj.index() == gtype_triangle) {
         return std::get<triangle_t>(gobj.obj).plane().pos;
     }
@@ -122,14 +119,19 @@ void gobj_set_pos(gobj_t &gobj, const vec3_t &pos, struct notcurses *nc) {
         std::get<sphere_t>(gobj.obj).pos = pos;
     } else if (gobj.obj.index() == gtype_plane) {
         std::get<plane_t>(gobj.obj).pos = pos;
-    } else if (gobj.obj.index() == gtype_bounded_plane) {
-        std::get<bounded_plane_t>(gobj.obj).plane.pos = pos;
+    } else if (gobj.obj.index() == gtype_rect) {
+        auto &rect = std::get<rect_t>(gobj.obj);
+        const vec3_t d = pos - rect.plane().pos;
+        rect.v[0] = rect.v[0] + d;
+        rect.v[1] = rect.v[1] + d;
+        rect.v[2] = rect.v[2] + d;
+        rect.v[3] = rect.v[3] + d;
     } else if (gobj.obj.index() == gtype_triangle) {
         auto &triangle = std::get<triangle_t>(gobj.obj);
         const vec3_t d = pos - triangle.plane().pos;
-        triangle.a = triangle.a + d;
-        triangle.b = triangle.b + d;
-        triangle.c = triangle.c + d;
+        triangle.v[0] = triangle.v[0] + d;
+        triangle.v[1] = triangle.v[1] + d;
+        triangle.v[2] = triangle.v[2] + d;
     } else {
         notcurses_stop(nc);
         ERR_EXIT("bad variant index: gobj.obj.index() = %zu", gobj.obj.index());
@@ -170,52 +172,12 @@ bool p_intersect(const line_t &line, const plane_t &plane, std::pair<std::option
     return true;
 }
 
-bool bp_intersect(const line_t &line, const bounded_plane_t &bounded_plane, std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc) {
+template <std::uint32_t C>
+bool pg_intersect(const line_t &line, const polygon_t<C> &polygon, std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc) {
     static thread_local std::pair<std::optional<float>, std::optional<float>> thisout;
     thisout.first.reset();
     thisout.second.reset();
-    if (!p_intersect(line, bounded_plane.plane, thisout)) {
-        return false;
-    }
-    if (!thisout.first.has_value()) {
-        notcurses_stop(nc);
-        ERR_EXIT("p_intersect returned true but did not return an intersection point");
-    }
-    float t = thisout.first.value();
-    const vec3_t pos = line.f(t);
-    axis_t axis = normal_to_axis(bounded_plane.plane.normal, nc);
-    switch (axis) {
-        case axis_t::x:
-            /* is bad / outside */
-            if ((pos.y - bounded_plane.plane.pos.y < bounded_plane.a || pos.y - bounded_plane.plane.pos.y > bounded_plane.a + bounded_plane.c) ||
-                (pos.z - bounded_plane.plane.pos.z < bounded_plane.b || pos.z - bounded_plane.plane.pos.z > bounded_plane.b + bounded_plane.d)) {
-                return false;
-            }
-            break;
-        case axis_t::y:
-            /* is bad / outside */
-            if ((pos.x - bounded_plane.plane.pos.x < bounded_plane.a || pos.x - bounded_plane.plane.pos.x > bounded_plane.a + bounded_plane.c) ||
-                (pos.z - bounded_plane.plane.pos.z < bounded_plane.b || pos.z - bounded_plane.plane.pos.z > bounded_plane.b + bounded_plane.d)) {
-                return false;
-            }
-            break;
-        case axis_t::z:
-            /* is bad / outside */
-            if ((pos.x - bounded_plane.plane.pos.x < bounded_plane.a || pos.x - bounded_plane.plane.pos.x > bounded_plane.a + bounded_plane.c) ||
-                (pos.y - bounded_plane.plane.pos.y < bounded_plane.b || pos.y - bounded_plane.plane.pos.y > bounded_plane.b + bounded_plane.d)) {
-                return false;
-            }
-            break;
-    }
-    ptimes.first = t;
-    return true;
-}
-
-bool t_intersect(const line_t &line, const triangle_t &triangle, std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc) {
-    static thread_local std::pair<std::optional<float>, std::optional<float>> thisout;
-    thisout.first.reset();
-    thisout.second.reset();
-    const plane_t plane = triangle.plane();
+    const plane_t plane = polygon.plane();
     if (!p_intersect(line, plane, thisout)) {
         return false;
     }
@@ -225,12 +187,12 @@ bool t_intersect(const line_t &line, const triangle_t &triangle, std::pair<std::
     }
     float t = thisout.first.value();
     const vec3_t pos = line.f(t);
-    const vec3_t ab = (triangle.a + triangle.b) / 2.0f;
-    const vec3_t bc = (triangle.b + triangle.c) / 2.0f;
-    const vec3_t ca = (triangle.c + triangle.a) / 2.0f;
-    if (static_cast<bool>(std::signbit((ab - plane.pos).dot(pos - ab))) &&
-        static_cast<bool>(std::signbit((bc - plane.pos).dot(pos - bc))) &&
-        static_cast<bool>(std::signbit((ca - plane.pos).dot(pos - ca)))) {
+    bool b = true;
+    for (std::uint32_t i = 0; i < C; i++) {
+        const vec3_t a = (polygon.v[i] + polygon.v[(i + 1) % C]) / 2.0f;
+        b = b && std::signbit((a - plane.pos).dot(pos - a));
+    }
+    if (b) {
         ptimes.first = t;
         return true;
     }
@@ -259,10 +221,10 @@ bool g_intersect(const line_t &line, const gobj_t &gobj, std::pair<std::optional
         i = i || s_intersect(line, std::get<sphere_t>(gobj.obj), ptimes);
     } else if (gobj.obj.index() == gtype_plane) {
         i = i || p_intersect(line, std::get<plane_t>(gobj.obj), ptimes);
-    } else if (gobj.obj.index() == gtype_bounded_plane) {
-        i = i || bp_intersect(line, std::get<bounded_plane_t>(gobj.obj), ptimes, nc);
+    } else if (gobj.obj.index() == gtype_rect) {
+        i = i || pg_intersect(line, std::get<rect_t>(gobj.obj), ptimes, nc);
     } else if (gobj.obj.index() == gtype_triangle) {
-        i = i || t_intersect(line, std::get<triangle_t>(gobj.obj), ptimes, nc);
+        i = i || pg_intersect(line, std::get<triangle_t>(gobj.obj), ptimes, nc);
     } else {
         notcurses_stop(nc);
         ERR_EXIT("bad variant index: gobj.obj.index() = %zu", gobj.obj.index());
@@ -285,8 +247,8 @@ vec3_t g_reflect(const vec3_t &vec, const gobj_t &gobj, const vec3_t &pos, struc
         return s_reflect(vec, std::get<sphere_t>(gobj.obj), pos);
     } else if (gobj.obj.index() == gtype_plane) {
         return p_reflect(vec, std::get<plane_t>(gobj.obj));
-    } else if (gobj.obj.index() == gtype_bounded_plane) {
-        return p_reflect(vec, std::get<bounded_plane_t>(gobj.obj).plane);
+    } else if (gobj.obj.index() == gtype_rect) {
+        return p_reflect(vec, std::get<rect_t>(gobj.obj).plane());
     } else if (gobj.obj.index() == gtype_triangle) {
         return p_reflect(vec, std::get<triangle_t>(gobj.obj).plane());
     }
@@ -321,7 +283,7 @@ void scene_t::intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *
             continue;
         }
         float current_t = optional_min(ptimes, nc);
-        /* make sure that it is "forward" on the ray, since light has direction */
+        /* make sure that it is "forward" on the ray, since light has directprismion */
         if (current_t < 0.0f) { continue; }
         if (current_t < closest_t) {
             closest_t = current_t;
@@ -417,10 +379,10 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
     return total_light_bounces;
 }
 
-void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror, const decltype(gobj_t::strength) &strength) {
-    for (const bounded_plane_t &bounded_plane : {rect.bottom, rect.top, rect.left, rect.right, rect.back, rect.front}) {
+void add_rectprism_light(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror, const decltype(gobj_t::strength) &strength) {
+    for (const rect_t &rect : {rectprism.bottom, rectprism.top, rectprism.left, rectprism.right, rectprism.back, rectprism.front}) {
         scene.objects.push_back(new gobj_t{
-            bounded_plane,
+            rect,
             color,
             mirror,
             true,
@@ -429,10 +391,10 @@ void add_rect_light(scene_t &scene, const rect_t &rect, const rgb_t &color, bool
     }
 }
 
-void add_rect(scene_t &scene, const rect_t &rect, const rgb_t &color, bool mirror) {
-    for (const bounded_plane_t &bounded_plane : {rect.bottom, rect.top, rect.left, rect.right, rect.back, rect.front}) {
+void add_rectprism(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror) {
+    for (const rect_t &rect : {rectprism.bottom, rectprism.top, rectprism.left, rectprism.right, rectprism.back, rectprism.front}) {
         scene.objects.push_back(new gobj_t{
-            bounded_plane,
+            rect,
             color,
             mirror
         });
