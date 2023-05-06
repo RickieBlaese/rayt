@@ -31,7 +31,7 @@ T get_random_real(T a, T b) {
 
 
 #define ERR_EXIT(...) { \
-    std::fprintf(stderr, "error: file " __FILE__ ", func %s, line %i: ", __func__, __LINE__); \
+    std::fprintf(stderr, "error: file " __FILE__ ":%i in %s: ", __LINE__, __func__); \
     std::fprintf(stderr, __VA_ARGS__); \
     std::fputc('\n', stderr); \
     std::exit(EXIT_FAILURE); \

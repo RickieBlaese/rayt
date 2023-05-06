@@ -2,7 +2,6 @@
 #define MODELS_H
 
 #include "common.h"
-#include <ratio>
 
 /* general vec3 */
 template <typename T>
@@ -23,17 +22,17 @@ struct gvec3_t { /* NOLINT */
     gvec3_t<T> &operator-=(const gvec3_t<T> &other) { return *this = *this - other; }
 
     template <typename Y>
-    gvec3_t<T> operator*(const Y &v) const { return {x * v, y * v, z * v}; }
+    [[nodiscard]] gvec3_t<T> operator*(const Y &v) const { return {x * v, y * v, z * v}; }
 
     template <typename Y>
-    gvec3_t<T> operator/(const Y &v) const { return {x / v, y / v, z / v}; }
+    [[nodiscard]] gvec3_t<T> operator/(const Y &v) const { return {x / v, y / v, z / v}; }
 
-    float mod() const { return std::sqrt(x * x + y * y + z * z); }
-    T dot(const gvec3_t<T> &other) const { return x * other.x + y * other.y + z * other.z; }
-    gvec3_t<T> cross(const gvec3_t<T> &other) const { return {y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x}; }
-    gvec3_t<T> normalized() const { return *this / mod(); }
-    gvec3_t<T> x_rotated(float theta) const { return {x * std::cos(theta) - z * std::sin(theta), y, x * std::sin(theta) + z * std::cos(theta)}; }
-    gvec3_t<T> y_rotated(float theta) const { return {x, y * std::cos(theta) - z * std::sin(theta), y * std::sin(theta) + z * std::cos(theta)}; }
+    [[nodiscard]] float mod() const { return std::sqrt(x * x + y * y + z * z); }
+    [[nodiscard]] T dot(const gvec3_t<T> &other) const { return x * other.x + y * other.y + z * other.z; }
+    [[nodiscard]] gvec3_t<T> cross(const gvec3_t<T> &other) const { return {y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x}; }
+    [[nodiscard]] gvec3_t<T> normalized() const { return *this / mod(); }
+    [[nodiscard]] gvec3_t<T> x_rotated(float theta) const { return {x * std::cos(theta) - z * std::sin(theta), y, x * std::sin(theta) + z * std::cos(theta)}; }
+    [[nodiscard]] gvec3_t<T> y_rotated(float theta) const { return {x, y * std::cos(theta) - z * std::sin(theta), y * std::sin(theta) + z * std::cos(theta)}; }
 };
 
 using vec3_t = gvec3_t<float>;
@@ -44,7 +43,11 @@ using rgb_t = gvec3_t<std::int32_t>;
  *             v */
 rgb_t multiplier(const rgb_t &original_color, float k);
 
+rgb_t color_multiplier(const rgb_t &a, const rgb_t &b);
+
 rgb_t average_colors(const rgb_t &a, const rgb_t &b);
+
+rgb_t clamp(const rgb_t &color);
 
 inline void sort_by_dist(std::vector<vec3_t> &vecs, const vec3_t &pos);
 
@@ -65,7 +68,7 @@ struct plane_t {
 
 /* convex only
  * assumes they already lie on a single plane */
-template <std::uint32_t C> requires std::ratio_greater<std::ratio<C>, std::ratio<2>>::value
+template <std::uint32_t C> requires std::ratio_greater_equal<std::ratio<C>, std::ratio<3>>::value
 struct polygon_t {
     vec3_t v[C];
     plane_t plane() const {
@@ -102,6 +105,8 @@ rectprism_t create_rectprism(const vec3_t &pos, const vec3_t &size);
 struct cylinder_t {
     line_t l;
     float r = 0;
+
+    plane_t normal_plane(const vec3_t &loc) const;
 };
 
 /* general variant indices, to be compared with variant.index() */
@@ -144,12 +149,6 @@ struct gobj_t {
     bool hidden = false;
 };
 
-enum struct axis_t : std::uint32_t {
-    x, y, z
-};
-
-axis_t normal_to_axis(const vec3_t &normal, struct notcurses *nc);
-
 vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc);
 
 void gobj_set_pos(gobj_t &gobj, const vec3_t &pos, struct notcurses *nc);
@@ -166,12 +165,10 @@ bool cl_intersect(const line_t &line, const cylinder_t &cylinder, std::pair<std:
 
 bool g_intersect(const line_t &line, const gobj_t &gobj, std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc);
 
-vec3_t p_reflect(const vec3_t &vec, const plane_t &plane);
-
-vec3_t s_reflect(const vec3_t &vec, const sphere_t &sphere, const vec3_t &pos);
+vec3_t p_reflect(const vec3_t &vec, const plane_t &plane, vec3_t &normal);
 
 /* reflects vec across the nomal plane of gobj at pos */
-vec3_t g_reflect(const vec3_t &vec, const gobj_t &gobj, const vec3_t &pos, struct notcurses *nc);
+vec3_t g_reflect(const vec3_t &vec, const gobj_t &gobj, const vec3_t &pos, struct notcurses *nc, vec3_t &normal);
 
 /* rotate vec around pos */
 vec3_t rotated_x_about(const vec3_t &vec, const vec3_t &pos, float theta);
@@ -200,7 +197,7 @@ struct scene_t {
     wchar_t get_gradient(float x);
     void intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *&closest_obj, float &closest_t, struct notcurses *nc);
     /* returns how many times it bounced light */
-    std::uint64_t render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, float init_distance, struct notcurses *nc);
+    std::uint64_t render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, struct notcurses *nc);
 };
 
 struct world_t {
@@ -210,7 +207,15 @@ struct world_t {
 /* allocates gobj_t */
 void add_rectprism_light(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror, const decltype(gobj_t::strength) &strength);
 
-void add_rectprism(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror);
+/* allocates gobj_t */
+void add_rectprism(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror, float roughness);
 
+
+struct intersection_t {
+    rgb_t color;
+    float roughness = 0.0f, dist = 0.0f,
+          c = 0.0f, p = 1.0f, brdf = 0.0f;
+    bool light = false;
+};
 
 #endif
