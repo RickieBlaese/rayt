@@ -71,12 +71,24 @@ struct plane_t {
 template <std::uint32_t C> requires std::ratio_greater_equal<std::ratio<C>, std::ratio<3>>::value
 struct polygon_t {
     vec3_t v[C];
-    plane_t plane() const {
+
+    vec3_t get_pos() const {
         vec3_t acc;
         for (std::uint32_t i = 0; i < C; i++) {
             acc += v[i];
         }
-        return {acc / static_cast<float>(C), (v[1] - v[0]).cross(v[2] - v[1]).normalized()};
+        return acc / static_cast<float>(C);
+    }
+
+    plane_t plane() const {
+        return {get_pos(), (v[1] - v[0]).cross(v[2] - v[1]).normalized()};
+    }
+
+    /* reversed winding order, i.e. flipped orientation */
+    polygon_t<C> reversed_wo() const {
+        polygon_t<C> r;
+        std::reverse_copy(std::begin(v), std::end(v), std::begin(r.v));
+        return r;
     }
 };
 
@@ -93,8 +105,10 @@ using rect_t = polygon_t<4>;
 using triangle_t = polygon_t<3>;
 
 struct rectprism_t {
-    vec3_t pos;
     rect_t bottom, top, left, right, back, front;
+
+    rectprism_t reversed_wo() const;
+    vec3_t get_pos() const;
 };
 
 /* size.x, size.y, size.z are width in that directprismion, should be positive 
@@ -191,13 +205,13 @@ struct scene_t {
     line_t camera_ray;
     std::uint32_t max_light_bounces = 20;
     std::uint32_t samples_per_ray = 10;
-    float minimum_color_multiplier = 0.05f;
+    float minimum_color_multiplier = 0.01f;
     std::wstring gradient;
 
     wchar_t get_gradient(float x);
     void intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *&closest_obj, float &closest_t, struct notcurses *nc);
     /* returns how many times it bounced light */
-    std::uint64_t render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, struct notcurses *nc);
+    std::uint64_t render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, float &applied_light, struct notcurses *nc);
 };
 
 struct world_t {
@@ -216,6 +230,8 @@ struct intersection_t {
     float roughness = 0.0f, dist = 0.0f,
           c = 0.0f, p = 1.0f, brdf = 0.0f;
     bool light = false;
+    bool transparent = false;
+    float opacity = 0.0f;
 };
 
 #endif

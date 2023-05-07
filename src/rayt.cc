@@ -100,16 +100,60 @@ int main(int argc, char **argv) {
 
     
     const auto light_strength_func = []([[maybe_unused]] float x) {
-        return std::pow(std::numbers::e_v<float>, -x/500.0f);
+        return std::pow(std::numbers::e_v<float>, -x/5000.0f);
     };
 
-    add_rectprism(scene, create_rectprism(vec3_t(-100, -3, -100), vec3_t(200, 200, 200)), rgb_t(210, 255, 255), false, 0.0f);
+    /* add_rectprism(scene, create_rectprism(vec3_t(-100, -3, -100), vec3_t(200, 200, 200)).reversed_wo(), rgb_t(210, 255, 255), false, 0.0f); */
     scene.objects.push_back(new gobj_t{
-        .obj = sphere_t{vec3_t(-2, -0.5f, 10), 2.5f},
-        .color = {255, 0, 0}
+        .obj = rect_t{{vec3_t(-50, -3, -50), vec3_t(-50, -3, 50), vec3_t(50, -3, 50), vec3_t(50, -3, -50)}},
+        .color = {210, 255, 255},
+        .roughness = 1.0f
     });
     scene.objects.push_back(new gobj_t{
-        .obj = plane_t{vec3_t(-50, 30, 10), vec3_t(1, 0, 0)},
+        .obj = sphere_t{vec3_t(-2, -0.5f, 10), 2.5f},
+        .color = {255, 0, 0},
+        .roughness = 1.0f,
+    });
+    /* scene.objects.push_back(new gobj_t{
+        .obj = sphere_t{vec3_t(-5, -0.5f, 5), 2.5f},
+        .color = {0, 0, 255},
+        .transparent = true,
+        .opacity = 0.5f
+    }); */
+    /* auto portal_scene = new scene_t{
+        .objects = {
+            new gobj_t{
+                .obj = sphere_t{vec3_t(15, 0, 0), 3.0f},
+                .color = {0, 255, 0}
+            },
+            new gobj_t{
+                .obj = plane_t{vec3_t(0, -3, 0), vec3_t(0, 1, 0)},
+                .color = {255, 255, 255}
+            },
+            new gobj_t{
+                .obj = plane_t{vec3_t(0, 50, 0), vec3_t(0, -1, 0)},
+                .color = {255, 255, 255},
+                .light = true,
+                .strength = default_light_strength
+            }
+        },
+        .gradient = gradient
+    };
+    world.scenes.push_back(portal_scene);
+    scene.objects.push_back(new gobj_t{
+        .obj = rect_t{{vec3_t(10, -2, -5), vec3_t(10, -2, 5), vec3_t(10, 8, 5), vec3_t(10, 8, -5)}},
+        .portal = portal_scene
+    }); */
+
+
+    scene.objects.push_back(new gobj_t{
+        .obj = plane_t{vec3_t(-50, 0, 0), vec3_t(1, 0, 0)},
+        .color = {255, 255, 255},
+        .light = true,
+        .strength = light_strength_func
+    });
+    scene.objects.push_back(new gobj_t{
+        .obj = plane_t{vec3_t(50, 0, 0), vec3_t(-1, 0, 0)},
         .color = {255, 255, 255},
         .light = true,
         .strength = light_strength_func
@@ -142,8 +186,9 @@ int main(int argc, char **argv) {
                         line_t ray = line_between(camera_pos, camera_n + curpos); /* t positive is "forward" */
                         wchar_t current_char = L' ';
                         rgb_t current_color;
+                        float applied_light = 0.0f;
 
-                        total_bounce_count += scene.render_ray(ray, current_color, current_char, nc);
+                        total_bounce_count += scene.render_ray(ray, current_color, current_char, applied_light, nc);
                         current_color = clamp(current_color);
 
                         while (!ncplane_mutex.try_lock()) {;}
@@ -217,10 +262,10 @@ int main(int argc, char **argv) {
         }
 
         else if (chin == L'x' || chin == L'X') {
-            grab_ray_time -= 0.1f;
+            grab_ray_time -= 0.02f;
         }
         else if (chin == L'v' || chin == L'V') {
-            grab_ray_time += 0.1f;
+            grab_ray_time += 0.02f;
         }
 
         else if (chin == L't') {
@@ -250,8 +295,6 @@ int main(int argc, char **argv) {
             world_objects_count += scene->objects.size();
         }
 
-        /* first_sphere.pos.x = 3.0f * std::sin(static_cast<float>(last_time - begin_time) / 1'000'000.0f);
-        first_sphere.pos.y = 3.0f * std::cos(static_cast<float>(last_time - begin_time) / 1'000'000.0f); */
         if (grabbed_obj != nullptr) {
             gobj_set_pos(*grabbed_obj, line_between(camera_pos, camera_n).f(grab_ray_time), nc);
         }
@@ -277,11 +320,12 @@ int main(int argc, char **argv) {
         ncplane_printf_yx(plane, 6, 0, "scene obj: %zu ", scene.objects.size());
         ncplane_printf_yx(plane, 7, 0, "world obj: %zu ", world_objects_count);
         ncplane_printf_yx(plane, 8, 0, "render: %lu µs ", render_time);
-        ncplane_printf_yx(plane, 9, 0, "bounces: %lu ", total_bounce_count.load());
-        ncplane_printf_yx(plane, 10, 0, "grabbed obj: %p ", grabbed_obj);
-        ncplane_putstr_yx(plane, 11, 0, "y regions: ");
+        ncplane_printf_yx(plane, 9, 0, "fps: %5.4Lf ", 1'000'000.0L / render_time);
+        ncplane_printf_yx(plane, 10, 0, "bounces: %lu ", total_bounce_count.load());
+        ncplane_printf_yx(plane, 11, 0, "grabbed obj: %p ", grabbed_obj);
+        ncplane_putstr_yx(plane, 12, 0, "y regions: ");
         for (std::int32_t i = 0; i < regions.size(); i++) {
-            ncplane_printf_yx(plane, i + 12, 0, "%i : %i ", regions[i].first, regions[i].second);
+            ncplane_printf_yx(plane, i + 13, 0, "%i : %i ", regions[i].first, regions[i].second);
         }
 
         notcurses_render(nc);
@@ -294,7 +338,8 @@ int main(int argc, char **argv) {
         jt->request_stop();
     }
 
-    render_complete.arrive_and_drop();
+    render_complete.arrive_and_wait();
+    render_complete.arrive_and_wait();
     for (std::jthread *jt : vthreads) {
         delete jt;
     }

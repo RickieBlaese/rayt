@@ -44,14 +44,27 @@ plane_t sphere_t::normal_plane(const vec3_t &loc) const {
     return {loc, ((loc - pos)).normalized()};
 }
 
+rectprism_t rectprism_t::reversed_wo() const {
+    return {bottom.reversed_wo(), top.reversed_wo(),
+        left.reversed_wo(), right.reversed_wo(),
+        back.reversed_wo(), front.reversed_wo()};
+}
+
+vec3_t rectprism_t::get_pos() const {
+    vec3_t acc;
+    for (const rect_t &rect : {bottom, top, left, right, back, front}) {
+        acc += rect.get_pos();
+    }
+    return acc / 6.0f;
+}
+
 rectprism_t create_rectprism(const vec3_t &pos, const vec3_t &size) {
     return {
-        vec3_t(pos.x + size.x / 2.0f, pos.y + size.y / 2.0f, pos.z + size.z / 2.0f),
         /* bottom */
         rect_t{{
             pos, pos + vec3_t(0, 0, size.z),
             pos + vec3_t(size.x, 0, size.z), pos + vec3_t(size.x, 0, 0)
-        }},
+        }}.reversed_wo(),
         /* top */
         rect_t{{
             pos + vec3_t(0, size.y, 0), pos + vec3_t(0, size.y, size.z),
@@ -66,7 +79,7 @@ rectprism_t create_rectprism(const vec3_t &pos, const vec3_t &size) {
         rect_t{{
             pos + vec3_t(size.x, 0, 0), pos + vec3_t(size.x, 0, size.z),
             pos + vec3_t(size.x, size.y, size.z), pos + vec3_t(size.x, size.y, 0)
-        }},
+        }}.reversed_wo(),
         /* back */
         rect_t{{
             pos, pos + vec3_t(0, size.y, 0),
@@ -76,7 +89,7 @@ rectprism_t create_rectprism(const vec3_t &pos, const vec3_t &size) {
         rect_t{{
             pos + vec3_t(0, 0, size.z), pos + vec3_t(0, size.y, size.z),
             pos + vec3_t(size.x, size.y, size.z), pos + vec3_t(size.x, 0, size.z)
-        }}
+        }}.reversed_wo()
     };
 }
 
@@ -316,7 +329,7 @@ void scene_t::intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *
     }
 }
 
-std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, struct notcurses *nc) {
+std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, float &applied_light, struct notcurses *nc) {
     std::uint64_t total_light_bounces = 0;
     rgb_t total_color;
     float total_applied_light = 0.0f;
@@ -329,6 +342,7 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
         const gobj_t *last_obj = nullptr;
         scene_t *current_scene = this;
         float total_distance = 0.0f;
+        float total_roughness = 0.0f;
         line_t line = ray;
         intersections.clear();
 
@@ -344,39 +358,39 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
             last_obj = closest_obj;
 
 
+            total_distance += (line.pos - closest_pos).mod();
+            line.pos = closest_pos;
+
             if (closest_obj->portal != nullptr) {
                 current_scene = closest_obj->portal;
                 continue;
             }
 
             intersection_t it;
-            total_distance += (line.pos - closest_pos).mod();
             it.dist = total_distance;
             it.color = closest_obj->texture(*closest_obj, closest_pos);
+            it.transparent = closest_obj->transparent;
 
-            line.pos = closest_pos;
 
-            if (closest_obj->transparent) {
-                float opacity = closest_obj->opacity_texture(*closest_obj, closest_pos);
-                it.color = multiplier(it.color, opacity) + multiplier(closest_obj->texture(*closest_obj, closest_pos), 1.0f - opacity);
-                intersections.push_back(it);
-                continue;
+            it.opacity = closest_obj->opacity_texture(*closest_obj, closest_pos);
+            if (!closest_obj->transparent) {
+                vec3_t normal;
+                const vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc, normal);
+                it.c = newvec.normalized().dot(normal);
+                it.p = 1.0f / (2.0f * std::numbers::pi_v<float>);
+                it.brdf = (1.0f - it.roughness) / std::numbers::pi_v<float>;
+                it.roughness = closest_obj->roughness_texture(*closest_obj, closest_pos);
+                total_roughness += it.roughness;
+
+                line.n = newvec;
             }
-
-            vec3_t normal;
-            const vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc, normal);
-            it.c = newvec.normalized().dot(normal);
-            it.p = 1.0f / (2.0f * std::numbers::pi_v<float>);
-            it.brdf = (1.0f - it.roughness) / std::numbers::pi_v<float>;
-            it.roughness = closest_obj->roughness_texture(*closest_obj, closest_pos);
-
-            line.n = newvec;
 
             if (closest_obj->light) {
                 /* done, we are not reflecting off a light */
                 light = closest_obj;
                 it.light = true;
                 intersections.push_back(it);
+                light_bounces++;
                 break;
             }
             intersections.push_back(it);
@@ -393,7 +407,11 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
                     rgb_t color = multiplier(intersections.rbegin()->color, light->strength(total_distance));
                     if (intersections.size() > 1) {
                         for (auto it = intersections.rbegin() + 1; it != intersections.rend(); it++) {
-                            color = color_multiplier(it->color, multiplier(color, it->brdf * it->c / it->p));
+                            if (it->transparent) {
+                                color = multiplier(it->color, it->opacity) + multiplier(color, 1.0f - it->opacity);
+                            } else {
+                                color = color_multiplier(it->color, multiplier(color, it->brdf * it->c / it->p));
+                            }
                         }
                     }
                     total_applied_light += light->strength(total_distance);
@@ -401,16 +419,22 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
                 }
             }
         }
+        /* if we never encountered anything that would change based on roughness then don't waste more samples */
+        if (total_roughness == 0.0f || last_obj == nullptr) {
+            samples++;
+            break;
+        }
     }
     
-    total_applied_light /= static_cast<float>(samples);
-    total_color = multiplier(total_color, 1.0f / static_cast<float>(samples));
-    if (total_applied_light != 0.0f) {
+    if (total_applied_light > 0.0f) {
+        total_applied_light /= static_cast<float>(samples);
+        total_color = multiplier(total_color, 1.0f / static_cast<float>(samples));
         outchar = get_gradient(static_cast<float>(gradient.size() - 1) * total_applied_light);
+        outcolor = total_color;
+        applied_light = total_applied_light;
     } else {
         outchar = L' ';
     }
-    outcolor = total_color;
 
     return total_light_bounces;
 }
