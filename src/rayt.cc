@@ -163,7 +163,7 @@ int main(int argc, char **argv) {
     std::mutex ncplane_mutex;
     std::barrier render_complete(thread_count + 1);
     std::vector<std::pair<std::int32_t, std::int32_t>> regions; /* y coords */
-    std::vector<std::jthread*> vthreads;
+    std::vector<std::thread*> vthreads;
     vthreads.reserve(thread_count);
     std::vector<float> itimes, thisout;
     std::uint32_t dimy = 0, dimx = 0;
@@ -171,11 +171,12 @@ int main(int argc, char **argv) {
     float camera_rotation_y = 0.0f;
     std::atomic_uint64_t total_bounce_count = 0;
     float grab_ray_time = 1.0f;
+    std::atomic_bool stop = false;
 
     
     for (std::int32_t i = 0; i < thread_count; i++) {
-        auto render_region = [&](const std::stop_token &stoken, std::int32_t region_ind) {
-            while (!stoken.stop_requested()) {
+        auto render_region = [&](const std::atomic_bool *stopt, std::int32_t region_ind) {
+            while (!stopt->load()) {
                 render_complete.arrive_and_wait();
                 const auto [ay, by] = regions[region_ind];
                 for (std::int32_t i = ay; i < by; i++) {
@@ -201,7 +202,7 @@ int main(int argc, char **argv) {
                 render_complete.arrive_and_wait();
             }
         };
-        vthreads.push_back(new std::jthread(render_region, i));
+        vthreads.push_back(new std::thread(render_region, &stop, i));
     }
 
 
@@ -334,14 +335,12 @@ int main(int argc, char **argv) {
 
 
     /* stopping jthreads */
-    for (std::jthread *jt : vthreads) {
-        jt->request_stop();
-    }
+    stop = true;
 
     render_complete.arrive_and_wait();
     render_complete.arrive_and_wait();
-    for (std::jthread *jt : vthreads) {
-        delete jt;
+    for (std::thread *t : vthreads) {
+        delete t;
     }
 
 

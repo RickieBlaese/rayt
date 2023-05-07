@@ -5,4 +5,4 @@ export COLORTERM=truecolor
 sudo false # to make sure we have sudo perms
 
 (sleep 2 && sudo killall -s SIGKILL strace 2>/dev/null) &
-strace -f -o /dev/null -D ./rayt -f480 -j12 -s2000
+strace -f -o /dev/null -D ./rayt -f480 -j16 -s100
