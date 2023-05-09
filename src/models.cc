@@ -410,7 +410,7 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
                             if (it->transparent) {
                                 color = multiplier(it->color, it->opacity) + multiplier(color, 1.0f - it->opacity);
                             } else {
-                                color = it->color, multiplier(color, it->brdf * it->c / it->p);
+                                color = it->color + multiplier(color, it->brdf * it->c / it->p);
                             }
                         }
                     }
