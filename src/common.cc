@@ -5,11 +5,11 @@ void partition(std::int32_t a, std::int32_t b, std::int32_t count, std::vector<s
         out.emplace_back(a, b);
         return;
     }
-    const float per = static_cast<float>(b - a) / static_cast<float>(count);
+    const double per = static_cast<double>(b - a) / static_cast<double>(count);
 
     std::int32_t i = 0;
-    float x = 0.0f;
-    float y = per;
+    double x = 0.0f;
+    double y = per;
     for (; i < count - 1; i++) {
         out.emplace_back(static_cast<std::int32_t>(std::round(x)),
             static_cast<std::int32_t>(std::round(y)));
@@ -20,7 +20,7 @@ void partition(std::int32_t a, std::int32_t b, std::int32_t count, std::vector<s
         static_cast<std::int32_t>(std::round(y)));
 }
 
-float optional_min(std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc) {
+double optional_min(std::pair<std::optional<double>, std::optional<double>> &ptimes, struct notcurses *nc) {
     if (ptimes.first.has_value() && !ptimes.second.has_value()) {
         return ptimes.first.value();
     }

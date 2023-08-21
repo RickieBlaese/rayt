@@ -1,25 +1,25 @@
 #include "models.h"
 
 
-rgb_t multiplier(const rgb_t &original_color, float k) {
+rgb_t multiplier(const rgb_t &original_color, double k) {
     rgb_t outcolor;
-    outcolor.x = static_cast<std::int32_t>(static_cast<float>(original_color.x) * k);
-    outcolor.y = static_cast<std::int32_t>(static_cast<float>(original_color.y) * k);
-    outcolor.z = static_cast<std::int32_t>(static_cast<float>(original_color.z) * k);
+    outcolor.x = static_cast<std::int32_t>(static_cast<double>(original_color.x) * k);
+    outcolor.y = static_cast<std::int32_t>(static_cast<double>(original_color.y) * k);
+    outcolor.z = static_cast<std::int32_t>(static_cast<double>(original_color.z) * k);
     return outcolor;
 }
 
 rgb_t color_multiplier(const rgb_t &a, const rgb_t &b) {
     rgb_t outcolor;
-    outcolor.x = static_cast<std::int32_t>(static_cast<float>(a.x) * static_cast<float>(b.x) / 255.0f);
-    outcolor.y = static_cast<std::int32_t>(static_cast<float>(a.y) * static_cast<float>(b.y) / 255.0f);
-    outcolor.z = static_cast<std::int32_t>(static_cast<float>(a.z) * static_cast<float>(b.z) / 255.0f);
+    outcolor.x = static_cast<std::int32_t>(static_cast<double>(a.x) * static_cast<double>(b.x) / 255.0);
+    outcolor.y = static_cast<std::int32_t>(static_cast<double>(a.y) * static_cast<double>(b.y) / 255.0);
+    outcolor.z = static_cast<std::int32_t>(static_cast<double>(a.z) * static_cast<double>(b.z) / 255.0);
     return outcolor;
 }
 
 
 rgb_t average_colors(const rgb_t &a, const rgb_t &b) {
-    return multiplier(a + b, 0.5f);
+    return multiplier(a + b, 0.5);
 }
 
 rgb_t clamp(const rgb_t &color) {
@@ -31,7 +31,7 @@ inline void sort_by_dist(std::vector<vec3_t> &vecs, const vec3_t &pos) {
     std::sort(vecs.begin(), vecs.end(), [&pos](const vec3_t &a, const vec3_t &b) { return (pos - a).mod() < (pos - b).mod(); });
 }
 
-vec3_t line_t::f(float t) const {
+vec3_t line_t::f(double t) const {
     return {pos.x + n.x * t, pos.y + n.y * t, pos.z + n.z * t};
 }
 
@@ -52,41 +52,41 @@ rectprism_t rectprism_t::reversed_wo() const {
 
 vec3_t rectprism_t::get_pos() const {
     vec3_t acc;
-    for (const rect_t &rect : {bottom, top, left, right, back, front}) {
+    for (const polygon_t &rect : {bottom, top, left, right, back, front}) {
         acc += rect.get_pos();
     }
-    return acc / 6.0f;
+    return acc / 6.0;
 }
 
 rectprism_t create_rectprism(const vec3_t &pos, const vec3_t &size) {
     return {
         /* bottom */
-        rect_t{{
+        polygon_t{{
             pos, pos + vec3_t(0, 0, size.z),
             pos + vec3_t(size.x, 0, size.z), pos + vec3_t(size.x, 0, 0)
         }}.reversed_wo(),
         /* top */
-        rect_t{{
+        polygon_t{{
             pos + vec3_t(0, size.y, 0), pos + vec3_t(0, size.y, size.z),
             pos + vec3_t(size.x, size.y, size.z), pos + vec3_t(size.x, size.y, 0)
         }},
         /* left */
-        rect_t{{
+        polygon_t{{
             pos, pos + vec3_t(0, 0, size.z),
             pos + vec3_t(0, size.y, size.z), pos + vec3_t(0, size.y, 0)
         }},
         /* right */
-        rect_t{{
+        polygon_t{{
             pos + vec3_t(size.x, 0, 0), pos + vec3_t(size.x, 0, size.z),
             pos + vec3_t(size.x, size.y, size.z), pos + vec3_t(size.x, size.y, 0)
         }}.reversed_wo(),
         /* back */
-        rect_t{{
+        polygon_t{{
             pos, pos + vec3_t(0, size.y, 0),
             pos + vec3_t(size.x, size.y, 0), pos + vec3_t(size.x, 0, 0)
         }},
         /* front */
-        rect_t{{
+        polygon_t{{
             pos + vec3_t(0, 0, size.z), pos + vec3_t(0, size.y, size.z),
             pos + vec3_t(size.x, size.y, size.z), pos + vec3_t(size.x, 0, size.z)
         }}.reversed_wo()
@@ -94,28 +94,28 @@ rectprism_t create_rectprism(const vec3_t &pos, const vec3_t &size) {
 }
 
 plane_t cylinder_t::normal_plane(const vec3_t &loc) const {
-    const float t = - (l.pos - loc).dot(l.n) / l.n.dot(l.n);
+    const double t = - (l.pos - loc).dot(l.n) / l.n.dot(l.n);
     return {loc, (loc - l.f(t)).normalized()};
 }
 
-float default_light_strength([[maybe_unused]] float x) {
+double default_light_strength([[maybe_unused]] double x) {
     /* this is just a smooth step-down function from a to b */
-    const float a = 0, b = 200;
-    x = std::clamp<float>(x, a, b);
-    const float alpha = std::pow(std::numbers::e_v<float>, - (b - a) / (x - a));
-    const float beta  = std::pow(std::numbers::e_v<float>, - (b - a) / (b - x));
-    return 1.0f - alpha / (alpha + beta);
+    const double a = 0, b = 200;
+    x = std::clamp<double>(x, a, b);
+    const double alpha = std::pow(std::numbers::e_v<double>, - (b - a) / (x - a));
+    const double beta  = std::pow(std::numbers::e_v<double>, - (b - a) / (b - x));
+    return 1.0 - alpha / (alpha + beta);
 }
 
 rgb_t default_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) {
     return self.color;
 }
 
-float default_opacity_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) {
+double default_opacity_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) {
     return self.opacity;
 }
 
-float default_roughness_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) {
+double default_roughness_texture([[maybe_unused]] const gobj_t &self, [[maybe_unused]] const vec3_t &pos) {
     return self.roughness;
 }
 
@@ -124,10 +124,8 @@ vec3_t gobj_get_pos(const gobj_t &gobj, struct notcurses *nc) {
         return std::get<sphere_t>(gobj.obj).pos;
     } else if (gobj.obj.index() == gtype_plane) {
         return std::get<plane_t>(gobj.obj).pos;
-    } else if (gobj.obj.index() == gtype_rect) {
-        return std::get<rect_t>(gobj.obj).plane().pos;
-    } else if (gobj.obj.index() == gtype_triangle) {
-        return std::get<triangle_t>(gobj.obj).plane().pos;
+    } else if (gobj.obj.index() == gtype_polygon) {
+        return std::get<polygon_t>(gobj.obj).plane().pos;
     } else if (gobj.obj.index() == gtype_cylinder) {
         return std::get<cylinder_t>(gobj.obj).l.pos;
     }
@@ -140,19 +138,12 @@ void gobj_set_pos(gobj_t &gobj, const vec3_t &pos, struct notcurses *nc) {
         std::get<sphere_t>(gobj.obj).pos = pos;
     } else if (gobj.obj.index() == gtype_plane) {
         std::get<plane_t>(gobj.obj).pos = pos;
-    } else if (gobj.obj.index() == gtype_rect) {
-        auto &rect = std::get<rect_t>(gobj.obj);
-        const vec3_t d = pos - rect.plane().pos;
-        rect.v[0] = rect.v[0] + d;
-        rect.v[1] = rect.v[1] + d;
-        rect.v[2] = rect.v[2] + d;
-        rect.v[3] = rect.v[3] + d;
-    } else if (gobj.obj.index() == gtype_triangle) {
-        auto &triangle = std::get<triangle_t>(gobj.obj);
-        const vec3_t d = pos - triangle.plane().pos;
-        triangle.v[0] = triangle.v[0] + d;
-        triangle.v[1] = triangle.v[1] + d;
-        triangle.v[2] = triangle.v[2] + d;
+    } else if (gobj.obj.index() == gtype_polygon) {
+        auto &polygon = std::get<polygon_t>(gobj.obj);
+        const vec3_t d = pos - polygon.plane().pos;
+        for (vec3_t &v : polygon.v) {
+            v += d;
+        }
     } else if (gobj.obj.index() == gtype_cylinder) {
         std::get<cylinder_t>(gobj.obj).l.pos = pos;
     } else {
@@ -161,18 +152,18 @@ void gobj_set_pos(gobj_t &gobj, const vec3_t &pos, struct notcurses *nc) {
     }
 }
 
-bool s_intersect(const line_t &line, const sphere_t &sphere, std::pair<std::optional<float>, std::optional<float>> &ptimes) {
-    const float alpha = (line.n.x * line.n.x) + (line.n.y * line.n.y) + (line.n.z * line.n.z);
-    const float beta  = 2 * (
+bool s_intersect(const line_t &line, const sphere_t &sphere, std::pair<std::optional<double>, std::optional<double>> &ptimes) {
+    const double alpha = (line.n.x * line.n.x) + (line.n.y * line.n.y) + (line.n.z * line.n.z);
+    const double beta  = 2 * (
         line.n.x * (line.pos.x - sphere.pos.x) +
         line.n.y * (line.pos.y - sphere.pos.y) +
         line.n.z * (line.pos.z - sphere.pos.z));
-    const float gamma = -2 * ((line.pos.x * sphere.pos.x) + (line.pos.y * sphere.pos.y) + (line.pos.z * sphere.pos.z)) +
+    const double gamma = -2 * ((line.pos.x * sphere.pos.x) + (line.pos.y * sphere.pos.y) + (line.pos.z * sphere.pos.z)) +
         line.pos.x * line.pos.x + sphere.pos.x * sphere.pos.x +
         line.pos.y * line.pos.y + sphere.pos.y * sphere.pos.y +
         line.pos.z * line.pos.z + sphere.pos.z * sphere.pos.z -
         (sphere.r * sphere.r);
-    const float discr = (beta * beta) - 4 * alpha * gamma;
+    const double discr = (beta * beta) - 4 * alpha * gamma;
     if (discr < 0) {
         return false;
     }
@@ -181,11 +172,11 @@ bool s_intersect(const line_t &line, const sphere_t &sphere, std::pair<std::opti
     return true;
 }
 
-bool p_intersect(const line_t &line, const plane_t &plane, std::pair<std::optional<float>, std::optional<float>> &ptimes) {
+bool p_intersect(const line_t &line, const plane_t &plane, std::pair<std::optional<double>, std::optional<double>> &ptimes) {
     /* if (line.n.dot(plane.normal) > 0 && plane.sided) {
         return false;
     } */
-    const float alpha = plane.normal.x * line.n.x + plane.normal.y * line.n.y + plane.normal.z * line.n.z;
+    const double alpha = plane.normal.x * line.n.x + plane.normal.y * line.n.y + plane.normal.z * line.n.z;
     if (alpha == 0) {
         return false;
     }
@@ -195,12 +186,15 @@ bool p_intersect(const line_t &line, const plane_t &plane, std::pair<std::option
     return true;
 }
 
-template <std::uint32_t C>
-bool pg_intersect(const line_t &line, const polygon_t<C> &polygon, std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc) {
-    static thread_local std::pair<std::optional<float>, std::optional<float>> thisout;
+bool pg_intersect(const line_t &line, const polygon_t &polygon, std::pair<std::optional<double>, std::optional<double>> &ptimes, struct notcurses *nc) {
+    static thread_local std::pair<std::optional<double>, std::optional<double>> thisout;
     thisout.first.reset();
     thisout.second.reset();
     const plane_t plane = polygon.plane();
+    /* std::pair<std::optional<double>, std::optional<double>> tout;
+    if (!s_intersect(line, sphere_t{plane.pos, (polygon.v[0] - plane.pos).mod()}, tout)) {
+        return false;
+    } */
     if (!p_intersect(line, plane, thisout)) {
         return false;
     }
@@ -208,13 +202,13 @@ bool pg_intersect(const line_t &line, const polygon_t<C> &polygon, std::pair<std
         notcurses_stop(nc);
         ERR_EXIT("p_intersect returned true but did not return an intersection point");
     }
-    float t = thisout.first.value();
+    double t = thisout.first.value();
     const vec3_t pos = line.f(t);
     bool f = true;
-    for (std::uint32_t i = 0; i < C; i++) {
+    for (std::uint32_t i = 0; i < polygon.v.size(); i++) {
         const vec3_t a = polygon.v[i];
-        const vec3_t b = polygon.v[(i + 1) % C];
-        const vec3_t ab = (a + b) / 2.0f;
+        const vec3_t b = polygon.v[(i + 1) % polygon.v.size()];
+        const vec3_t ab = (a + b) / 2.0;
         f = f && std::signbit((b - a).cross(plane.normal).dot(pos - ab));
     }
     if (f) {
@@ -224,36 +218,48 @@ bool pg_intersect(const line_t &line, const polygon_t<C> &polygon, std::pair<std
     return false;
 }
 
-bool cl_intersect(const line_t &line, const cylinder_t &cylinder, std::pair<std::optional<float>, std::optional<float>> &ptimes) {
-    const float bc = cylinder.l.n.z * line.n.y - line.n.z * cylinder.l.n.y;
-    const float ca = cylinder.l.n.x * line.n.z - line.n.x * cylinder.l.n.z;
-    const float ab = cylinder.l.n.y * line.n.x - line.n.y * cylinder.l.n.x;
+bool cl_intersect(const line_t &line, const cylinder_t &cylinder, std::pair<std::optional<double>, std::optional<double>> &ptimes) {
+    const double bc = cylinder.l.n.z * line.n.y - line.n.z * cylinder.l.n.y;
+    const double ca = cylinder.l.n.x * line.n.z - line.n.x * cylinder.l.n.z;
+    const double ab = cylinder.l.n.y * line.n.x - line.n.y * cylinder.l.n.x;
 
-    const float zy = cylinder.l.n.y * (cylinder.l.pos.z - line.pos.z) - cylinder.l.n.z * (cylinder.l.pos.y - line.pos.y);
-    const float xz = cylinder.l.n.z * (cylinder.l.pos.x - line.pos.x) - cylinder.l.n.x * (cylinder.l.pos.z - line.pos.z);
-    const float yx = cylinder.l.n.x * (cylinder.l.pos.y - line.pos.y) - cylinder.l.n.y * (cylinder.l.pos.x - line.pos.x);
-    const float alpha = bc * bc + ca * ca + ab * ab;
-    const float beta = 2 * (bc * zy + ca * xz + ab * yx);
-    const float gamma = zy * zy + xz * xz + yx * yx - (cylinder.l.n.x * cylinder.l.n.x + cylinder.l.n.y * cylinder.l.n.y + cylinder.l.n.z * cylinder.l.n.z) * cylinder.r * cylinder.r;
-    const float discr = (beta * beta) - 4 * alpha * gamma;
+    const double zy = cylinder.l.n.y * (cylinder.l.pos.z - line.pos.z) - cylinder.l.n.z * (cylinder.l.pos.y - line.pos.y);
+    const double xz = cylinder.l.n.z * (cylinder.l.pos.x - line.pos.x) - cylinder.l.n.x * (cylinder.l.pos.z - line.pos.z);
+    const double yx = cylinder.l.n.x * (cylinder.l.pos.y - line.pos.y) - cylinder.l.n.y * (cylinder.l.pos.x - line.pos.x);
+    const double alpha = bc * bc + ca * ca + ab * ab;
+    const double beta = 2 * (bc * zy + ca * xz + ab * yx);
+    const double gamma = zy * zy + xz * xz + yx * yx - (cylinder.l.n.x * cylinder.l.n.x + cylinder.l.n.y * cylinder.l.n.y + cylinder.l.n.z * cylinder.l.n.z) * cylinder.r * cylinder.r;
+    const double discr = (beta * beta) - 4 * alpha * gamma;
     if (discr < 0) {
         return false;
     }
-    ptimes.first  = (-beta + std::sqrt(discr)) / (2 * alpha);
-    ptimes.second = (-beta - std::sqrt(discr)) / (2 * alpha);
+    const double ta = (-beta + std::sqrt(discr)) / (2 * alpha);
+    const double tb = (-beta - std::sqrt(discr)) / (2 * alpha);
+    const vec3_t tap = line.f(ta);
+    const vec3_t tbp = line.f(tb);
+    const double cta = - (cylinder.l.pos - tbp).dot(cylinder.l.n) / cylinder.l.n.dot(cylinder.l.n);
+    const double ctb = - (cylinder.l.pos - tap).dot(cylinder.l.n) / cylinder.l.n.dot(cylinder.l.n);
+    if (cylinder.bounds.has_value()) {
+        if (tb > ta && (ctb > cylinder.bounds.value().second || cylinder.bounds.value().first > ctb)) {
+            return false;
+        }
+        if (ta > tb && (cta > cylinder.bounds.value().second || cylinder.bounds.value().first > cta)) {
+            return false;
+        }
+    }
+    ptimes.first = ta;
+    ptimes.second = tb;
     return true;
 }
 
-bool g_intersect(const line_t &line, const gobj_t &gobj, std::pair<std::optional<float>, std::optional<float>> &ptimes, struct notcurses *nc) {
+bool g_intersect(const line_t &line, const gobj_t &gobj, std::pair<std::optional<double>, std::optional<double>> &ptimes, struct notcurses *nc) {
     bool i = false;
     if (gobj.obj.index() == gtype_sphere) {
         i = s_intersect(line, std::get<sphere_t>(gobj.obj), ptimes);
     } else if (gobj.obj.index() == gtype_plane) {
         i = p_intersect(line, std::get<plane_t>(gobj.obj), ptimes);
-    } else if (gobj.obj.index() == gtype_rect) {
-        i = pg_intersect(line, std::get<rect_t>(gobj.obj), ptimes, nc);
-    } else if (gobj.obj.index() == gtype_triangle) {
-        i = pg_intersect(line, std::get<triangle_t>(gobj.obj), ptimes, nc);
+    } else if (gobj.obj.index() == gtype_polygon) {
+        i = pg_intersect(line, std::get<polygon_t>(gobj.obj), ptimes, nc);
     } else if (gobj.obj.index() == gtype_cylinder) {
         i = cl_intersect(line, std::get<cylinder_t>(gobj.obj), ptimes);
     } else {
@@ -264,9 +270,9 @@ bool g_intersect(const line_t &line, const gobj_t &gobj, std::pair<std::optional
 }
 
 vec3_t p_reflect(const vec3_t &vec, const plane_t &plane, vec3_t &normal) {
-    /* vec3_t effective_normal = (plane.normal * (2 * (plane.normal.dot(vec) < 0) - 1)).normalized(); */
+    /* normal = (plane.normal * (2 * (plane.normal.dot(vec) <= 0) - 1)).normalized(); */
     normal = plane.normal;
-    return vec - normal * vec.dot(normal) * 2.0f;
+    return vec - normal * vec.dot(normal) * 2.0;
 }
 
 vec3_t g_reflect(const vec3_t &vec, const gobj_t &gobj, const vec3_t &pos, struct notcurses *nc, vec3_t &normal) {
@@ -275,41 +281,39 @@ vec3_t g_reflect(const vec3_t &vec, const gobj_t &gobj, const vec3_t &pos, struc
         newvec = p_reflect(vec, std::get<sphere_t>(gobj.obj).normal_plane(pos), normal);
     } else if (gobj.obj.index() == gtype_plane) {
         newvec = p_reflect(vec, std::get<plane_t>(gobj.obj), normal);
-    } else if (gobj.obj.index() == gtype_rect) {
-        newvec = p_reflect(vec, std::get<rect_t>(gobj.obj).plane(), normal);
-    } else if (gobj.obj.index() == gtype_triangle) {
-        newvec = p_reflect(vec, std::get<triangle_t>(gobj.obj).plane(), normal);
+    } else if (gobj.obj.index() == gtype_polygon) {
+        newvec = p_reflect(vec, std::get<polygon_t>(gobj.obj).plane(), normal);
     } else if (gobj.obj.index() == gtype_cylinder) {
         newvec = p_reflect(vec, std::get<cylinder_t>(gobj.obj).normal_plane(pos), normal);
     } else {
         notcurses_stop(nc);
         ERR_EXIT("bad variant index: gobj.obj.index() = %zu", gobj.obj.index());
     }
-    float roughness = gobj.roughness_texture(gobj, pos);
+    double roughness = gobj.roughness_texture(gobj, pos);
     vec3_t rvec(0, 0, 1);
-    rvec = rvec.y_rotated(get_random_real(0.0f, std::numbers::pi_v<float> * 2.0f));
-    rvec = rvec.x_rotated(get_random_real(0.0f, std::numbers::pi_v<float>));
+    rvec = rvec.y_rotated(get_random_real(0.0, std::numbers::pi_v<double> * 2.0));
+    rvec = rvec.x_rotated(get_random_real(0.0, std::numbers::pi_v<double>));
     rvec = rvec * (-1 * static_cast<bool>(normal.dot(rvec) < 0)); /* if it's not in the right hemisphere, just negate */
-    return (newvec * (1.0f - roughness) + rvec * roughness).normalized() * vec.mod();
+    return (newvec * (1.0 - roughness) + rvec * roughness).normalized() * vec.mod();
 }
 
-vec3_t rotated_x_about(const vec3_t &vec, const vec3_t &pos, float theta) {
+vec3_t rotated_x_about(const vec3_t &vec, const vec3_t &pos, double theta) {
     return (vec - pos).x_rotated(theta) + pos;
 }
 
-vec3_t rotated_y_about(const vec3_t &vec, const vec3_t &pos, float theta) {
+vec3_t rotated_y_about(const vec3_t &vec, const vec3_t &pos, double theta) {
     return (vec - pos).y_rotated(theta) + pos;
 }
 
 
-wchar_t scene_t::get_gradient(float x) {
+wchar_t scene_t::get_gradient(double x) {
     return gradient.at(std::clamp<std::size_t>(static_cast<std::int32_t>(std::round(x)), 0, gradient.length() - 1));
 }
 
-void scene_t::intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *&closest_obj, float &closest_t, struct notcurses *nc) {
-    static thread_local std::pair<std::optional<float>, std::optional<float>> ptimes;
+void scene_t::intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *&closest_obj, double &closest_t, struct notcurses *nc) {
+    static thread_local std::pair<std::optional<double>, std::optional<double>> ptimes;
     /* first, determine the closest intersection point out of all objects on the ray */
-    closest_t = std::numeric_limits<float>::max();
+    closest_t = std::numeric_limits<double>::max();
     vec3_t closest_pos{closest_t, closest_t, closest_t}; /* closest_t is max value right now */
     /* pigobj = pointer to (potential) intersecting gobj */
     for (gobj_t *pigobj : objects) {
@@ -319,9 +323,9 @@ void scene_t::intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *
         if (!g_intersect(line, *pigobj, ptimes, nc)) {
             continue;
         }
-        float current_t = optional_min(ptimes, nc);
+        double current_t = optional_min(ptimes, nc);
         /* make sure that it is "forward" on the ray, since light has direction */
-        if (current_t < 0.0f) { continue; }
+        if (current_t < 0.0) { continue; }
         if (current_t < closest_t) {
             closest_t = current_t;
             closest_obj = pigobj;
@@ -329,26 +333,26 @@ void scene_t::intersect_ray(const line_t &line, const gobj_t *last_obj, gobj_t *
     }
 }
 
-std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, float &applied_light, struct notcurses *nc) {
+std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, double &applied_light, struct notcurses *nc) {
     std::uint64_t total_light_bounces = 0;
     rgb_t total_color;
-    float total_applied_light = 0.0f;
+    double total_applied_light = 0.0;
     std::int32_t samples = 0;
-    std::vector<intersection_t> intersections;
+    static thread_local std::vector<intersection_t> intersections;
 
     for (samples = 0; samples < samples_per_ray; samples++) {
         std::uint64_t light_bounces = 0;
         const gobj_t *light = nullptr;
         const gobj_t *last_obj = nullptr;
         scene_t *current_scene = this;
-        float total_distance = 0.0f;
-        float total_roughness = 0.0f;
+        double total_distance = 0.0;
+        double total_roughness = 0.0;
         line_t line = ray;
         intersections.clear();
 
         for (light_bounces = 0; light_bounces < max_light_bounces; light_bounces++) {
             gobj_t *closest_obj = nullptr;
-            float closest_t = std::numeric_limits<float>::max();
+            double closest_t = std::numeric_limits<double>::max();
             current_scene->intersect_ray(line, last_obj, closest_obj, closest_t, nc);
             vec3_t closest_pos = line.f(closest_t);
 
@@ -377,8 +381,8 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
                 vec3_t normal;
                 const vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc, normal);
                 it.c = newvec.normalized().dot(normal);
-                it.p = 1.0f / (2.0f * std::numbers::pi_v<float>);
-                it.brdf = (1.0f - it.roughness) / std::numbers::pi_v<float>;
+                it.p = 1.0 / (2.0 * std::numbers::pi_v<double>);
+                it.brdf = (1.0 - it.roughness) / std::numbers::pi_v<double>;
                 it.roughness = closest_obj->roughness_texture(*closest_obj, closest_pos);
                 total_roughness += it.roughness;
 
@@ -393,7 +397,9 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
                 light_bounces++;
                 break;
             }
-            intersections.push_back(it);
+            if (!closest_obj->mirror) {
+                intersections.push_back(it);
+            }
         }
         total_light_bounces += light_bounces;
 
@@ -405,13 +411,11 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
                     total_applied_light += minimum_color_multiplier;
                 } else if (intersections.rbegin()->light) {
                     rgb_t color = multiplier(intersections.rbegin()->color, light->strength(total_distance));
-                    if (intersections.size() > 1) {
-                        for (auto it = intersections.rbegin() + 1; it != intersections.rend(); it++) {
-                            if (it->transparent) {
-                                color = multiplier(it->color, it->opacity) + multiplier(color, 1.0f - it->opacity);
-                            } else {
-                                color = it->color + multiplier(color, it->brdf * it->c / it->p);
-                            }
+                    for (auto it = intersections.rbegin() + 1; it != intersections.rend(); it++) {
+                        if (it->transparent) {
+                            color = multiplier(it->color, it->opacity) + multiplier(color, 1.0 - it->opacity);
+                        } else {
+                            color = it->color + multiplier(color, it->brdf * it->c / it->p);
                         }
                     }
                     total_applied_light += light->strength(total_distance);
@@ -420,16 +424,16 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
             }
         }
         /* if we never encountered anything that would change based on roughness then don't waste more samples */
-        if (total_roughness == 0.0f || last_obj == nullptr) {
+        if (total_roughness == 0.0 || last_obj == nullptr) {
             samples++;
             break;
         }
     }
     
-    if (total_applied_light > 0.0f) {
-        total_applied_light /= static_cast<float>(samples);
-        total_color = multiplier(total_color, 1.0f / static_cast<float>(samples));
-        outchar = get_gradient(static_cast<float>(gradient.size() - 1) * total_applied_light);
+    if (total_applied_light > 0.0) {
+        total_applied_light /= static_cast<double>(samples);
+         total_color = multiplier(total_color, 1.0 / static_cast<double>(samples));
+        outchar = get_gradient(static_cast<double>(gradient.size() - 1) * total_applied_light);
         outcolor = total_color;
         applied_light = total_applied_light;
     } else {
@@ -440,19 +444,19 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
 }
 
 void add_rectprism_light(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror, const decltype(gobj_t::strength) &strength) {
-    for (const rect_t &rect : {rectprism.bottom, rectprism.top, rectprism.left, rectprism.right, rectprism.back, rectprism.front}) {
+    for (const polygon_t &rect : {rectprism.bottom, rectprism.top, rectprism.left, rectprism.right, rectprism.back, rectprism.front}) {
         scene.objects.push_back(new gobj_t{
-            rect,
-            color,
-            mirror,
-            true,
-            strength
+            .obj = rect,
+            .color = color,
+            .mirror = mirror,
+            .light = true,
+            .strength = strength
         });
     }
 }
 
-void add_rectprism(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror, float roughness) {
-    for (const rect_t &rect : {rectprism.bottom, rectprism.top, rectprism.left, rectprism.right, rectprism.back, rectprism.front}) {
+void add_rectprism(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror, double roughness) {
+    for (const polygon_t &rect : {rectprism.bottom, rectprism.top, rectprism.left, rectprism.right, rectprism.back, rectprism.front}) {
         scene.objects.push_back(new gobj_t{
             .obj = rect,
             .color = color,
