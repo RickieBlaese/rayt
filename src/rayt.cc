@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <numbers>
 #include <atomic>
 #include <barrier>
 #include <chrono>
@@ -14,11 +15,17 @@
 #include <sstream>
 
 #include "nlohmann/json.hpp"
+
 #include "models.h"
 
 
 std::uint64_t get_current_time() {
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+}
+
+/* ltrim copied from https://stackoverflow.com/questions/216823/how-to-trim-an-stdstring */
+void ltrim(std::string &in) {
+    in.erase(in.begin(), std::find_if(in.begin(), in.end(), [](unsigned char ch) { return !std::isspace(ch); }));
 }
 
 bool get_input_blocking(std::vector<std::string> &rhistory, const std::string &starting_str, struct ncplane *plane, struct notcurses *nc) {
@@ -29,7 +36,7 @@ bool get_input_blocking(std::vector<std::string> &rhistory, const std::string &s
     history.emplace_back();
     std::uint32_t cpos = 0;
     std::uint32_t history_pos = history.size() - 1;
-#define crout() history[history_pos]
+#define crout() (history[history_pos])
     ncplane_options opts;
     opts.flags = NCPLANE_OPTION_HORALIGNED;
     opts.x = 1;
@@ -105,17 +112,98 @@ bool get_input_blocking(std::vector<std::string> &rhistory, const std::string &s
     return broke;
 }
 
+#undef crout
+
+vec3_t *gcamera_pos = nullptr;
+
 void from_json(const nlohmann::json &j, vec3_t &vec) {
-    j.at(0).get_to(vec.x);
-    j.at(1).get_to(vec.y);
-    j.at(2).get_to(vec.z);
+    /* slight jank */
+    if (j.is_array()) {
+        j.at(0).get_to(vec.x);
+        j.at(1).get_to(vec.y);
+        j.at(2).get_to(vec.z);
+    } else if (j == "_curpos") {
+        vec.x = gcamera_pos->x;
+        vec.y = gcamera_pos->y;
+        vec.z = gcamera_pos->z;
+    }
 }
 
 void from_json(const nlohmann::json &j, rgb_t &color) {
-    j.at(0).get_to(color.x);
-    j.at(1).get_to(color.y);
-    j.at(2).get_to(color.z);
+    /* slight jank */
+    if (j.is_array()) {
+        j.at(0).get_to(color.x);
+        j.at(1).get_to(color.y);
+        j.at(2).get_to(color.z);
+    }
 }
+
+void from_json(const nlohmann::json &j, sphere_t &sphere) {
+    sphere = sphere_t{
+        .pos = vec3_t(0, 0, 0),
+        .r = 1.0,
+    };
+
+    if (j.contains("pos")) {
+        j.at("pos").get_to(sphere.pos);
+    }
+    if (j.contains("r")) {
+        j.at("r").get_to(sphere.r);
+    }
+}
+
+void from_json(const nlohmann::json &j, plane_t &plane) {
+    plane = plane_t{
+        .pos = vec3_t(0, 0, 0),
+        .normal = vec3_t(0, 0, 1),
+    };
+
+    if (j.contains("pos")) {
+        j.at("pos").get_to(plane.pos);
+    }
+    if (j.contains("normal")) {
+        j.at("normal").get_to(plane.normal);
+    }
+}
+
+void from_json(const nlohmann::json &j, polygon_t &polygon) {
+    if (j.contains("v")) {
+        j.at("v").get_to(polygon.v);
+    }
+}
+
+void from_json(const nlohmann::json &j, line_t &line) {
+    line = line_t{
+        .pos = vec3_t(0, 0, 0),
+        .n = vec3_t(0, 0, 1),
+    };
+
+    if (j.contains("n")) {
+        j.at("n").get_to(line.n);
+    }
+    if (j.contains("pos")) {
+        j.at("pos").get_to(line.pos);
+    }
+}
+
+void from_json(const nlohmann::json &j, cylinder_t &cylinder) {
+    cylinder = cylinder_t{
+        .l = line_t(),
+        .r = 1.0
+    };
+
+    if (j.contains("l")) {
+        j.at("l").get_to(cylinder.l);
+    }
+    if (j.contains("r")) {
+        j.at("r").get_to(cylinder.r);
+    }
+    if (j.contains("bounds")) {
+        auto b = j.at("bounds").get<std::vector<double>>();
+        cylinder.bounds = std::make_pair(b[0], b[1]);
+    }
+}
+
 
 void from_json(const nlohmann::json &j, gobj_t &gobj) {
     gobj = gobj_t{
@@ -127,6 +215,7 @@ void from_json(const nlohmann::json &j, gobj_t &gobj) {
         .opacity = 1.0,
         .hidden = false,
     };
+
     if (j.contains("color")) {
         j.at("color").get_to(gobj.color);
     }
@@ -176,7 +265,7 @@ int main(int argc, char **argv) {
     std::wstring gradient;
     std::ifstream gradient_file("gradient.txt");
     if (!gradient_file.is_open()) {
-        ERR_EXIT("couldn't open gradient.txt\n");
+        ERR_EXIT("couldn't open gradient.txt");
     }
     std::stringstream ss;
     ss << gradient_file.rdbuf();
@@ -201,7 +290,6 @@ int main(int argc, char **argv) {
 
     /* initialize notcurses */
     notcurses_options opts{};
-    opts.flags = NCOPTION_INHIBIT_SETLOCALE;
 
     struct notcurses *nc = notcurses_init(&opts, nullptr);
 
@@ -242,6 +330,7 @@ int main(int argc, char **argv) {
     scene.gradient = gradient;
     scene.camera_ray = line_t{vec3_t(0, 0, 0), vec3_t(0, 0, begin_draw_dist)};
     vec3_t &camera_pos = scene.camera_ray.pos;
+    gcamera_pos = &camera_pos;
     vec3_t &camera_n   = scene.camera_ray.n;
     vec3_t base_camera_n = camera_n;
     gobj_t *grabbed_obj = nullptr;
@@ -358,6 +447,8 @@ int main(int argc, char **argv) {
         .strength = light_strength_func
     });
 
+    static constexpr std::uint32_t max_chat_width = 100;
+
 
     std::mutex ncplane_mutex;
     std::barrier render_complete(thread_count + 1);
@@ -412,8 +503,10 @@ int main(int argc, char **argv) {
     static std::uniform_real_distribution<double> thetadist(0, 2 * std::numbers::pi);
     static std::uniform_real_distribution<double> phidist(-std::numbers::pi / 2.0, std::numbers::pi / 2.0);
     static std::uniform_int_distribution<std::int32_t> colordist(0, 255);
-    std::string last_msg = "";
-    bool msg_is_error = false;
+
+    rgb_t chat_err_color = rgb_t(255, 10, 70);
+    rgb_t chat_good_color = rgb_t(10, 255, 70);
+    rgb_t chat_normal_color = rgb_t(255, 255, 255);
 
     while (true) {
         while (get_current_time() - last_time < wait_us_per_frame) {;}
@@ -441,7 +534,7 @@ int main(int argc, char **argv) {
         else if (chin == L'A') { move_d.x = -x_move_speed * shift_multiplier; }
 
         else if (chin == L'h') {
-            // random graph generator
+            /* random graph generator */
             vec3_t newpoint;
             for (const vec3_t &p : spoints) {
                 newpoint += p;
@@ -462,7 +555,7 @@ int main(int argc, char **argv) {
                     .r = 1
                 },
                 .color = {colordist(engine), colordist(engine), colordist(engine)},
-                .roughness = 1.0
+                .roughness = 0.9999
             });
             std::shuffle(spoints.begin(), spoints.end(), engine);
             std::uint32_t joincount = std::uniform_int_distribution<std::uint32_t>(0, spoints.size())(engine);
@@ -485,7 +578,7 @@ int main(int argc, char **argv) {
 
             // simplex generator
             /* vec3_t newpoint;
-            for (const vec3_t &p : spoints) {
+            for (cownst vec3_t &p : spoints) {
                 newpoint += p;
             }
             if (spoints.size() > 0) {
@@ -494,7 +587,7 @@ int main(int argc, char **argv) {
             double maxmod = 0.0;
             for (const vec3_t &p : spoints) {
                 if (p.mod() > maxmod) {
-                    maxmod = p.mod();
+                    qmaxmod = p.mod();
                 }
             }
             newpoint += vec3_t(1.0, 0.0, 0.0).x_rotated(thetadist(engine)).y_rotated(phidist(engine)) * (maxmod + 1.0);
@@ -503,7 +596,8 @@ int main(int argc, char **argv) {
                 scene.objects.push_back(new gobj_t{
                     .obj = cylinder_t{
                         .l = line_t{
-                            .pos = newpoint,
+                     
+                        .pos = newpoint,
                             .n = newpoint - p
                         },
                         .r = 0.2,
@@ -561,10 +655,10 @@ int main(int argc, char **argv) {
             }
             std::string in = *(cmdhistory.end() - 1);
 
-            /* ltrim copied from https://stackoverflow.com/questions/216823/how-to-trim-an-stdstring */
+            ltrim(in);
             in.erase(in.begin(), std::find_if(in.begin(), in.end(), [](unsigned char ch) { return !std::isspace(ch); }));
 
-            std::size_t spaceloc = in.find_first_of(' ');
+            std::size_t spaceloc = in.find_first_of(" \t");
             std::string cmd, args;
             if (spaceloc == std::string::npos) {
                 spaceloc = in.length(); /* bad but it's what we want */
@@ -573,8 +667,7 @@ int main(int argc, char **argv) {
             }
             cmd = in.substr(0, spaceloc);
 
-            /* ltrim */
-            args.erase(args.begin(), std::find_if(args.begin(), args.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+            ltrim(args);
 
             if (cmd.empty()) {
                 goto end_input;
@@ -585,19 +678,56 @@ int main(int argc, char **argv) {
                 gobj_t gobj;
                 try {
                     j = nlohmann::json::parse(args);
-                    gobj = j[0].get<gobj_t>();
+                    std::uint32_t t = j["type"];
+                    auto obj = j["obj"];
+
+                    gobj = j.get<gobj_t>();
+
+                    if (t == gtype_sphere) {
+                        gobj.obj = obj.get<sphere_t>();
+                    } else if (t == gtype_plane) {
+                        gobj.obj = obj.get<plane_t>();
+                    } else if (t == gtype_polygon) {
+                        gobj.obj = obj.get<polygon_t>();
+                    } else if (t == gtype_cylinder) {
+                        gobj.obj = obj.get<cylinder_t>();
+                    }
                 } catch (std::exception &e) {
-                    last_msg = std::string("failed to parse json: ") + e.what();
-                    msg_is_error = true;
+                    world.chat.push_back(chatmsg_t{
+                        .created_at = get_current_time(),
+                        .text = std::string("failed to parse json: ") + e.what(),
+                        .creator = sys_guid,
+                        .color = chat_err_color
+                    });
                     goto end_input;
                 }
-                last_msg = "created gobj";
-                msg_is_error = false;
+                auto *p = new gobj_t(gobj);
+                scene.objects.push_back(p);
+                std::stringstream gobjptrstr;
+                gobjptrstr << std::hex << p;
+                world.chat.push_back(chatmsg_t{
+                    .created_at = get_current_time(),
+                    .text = "added gobj " + gobjptrstr.str(),
+                    .creator = sys_guid,
+                    .color = chat_good_color
+                });
+                goto end_input;
+            } else if (cmd == "tfov") {
+                base_camera_n.z += std::strtof(args.c_str(), nullptr);
+                goto end_input;
             } else if (cmd == "q") {
                 break;
+            } else if (cmd == "def") {
+                if (args == "sphere") {
+                    
+                }
             } else {
-                last_msg = "command not recognized";
-                    msg_is_error = true;
+                world.chat.push_back(chatmsg_t{
+                    .created_at = get_current_time(),
+                    .text = "command not recognized",
+                    .creator = sys_guid,
+                    .color = chat_err_color
+                });
                 goto end_input;
             }
         }
@@ -649,15 +779,15 @@ int main(int argc, char **argv) {
         for (std::int32_t i = 0; i < regions.size(); i++) {
             ncplane_printf_yx(plane, i + 13, 0, "%i : %i ", regions[i].first, regions[i].second);
         }
-        if (!last_msg.empty()) {
-            ncplane_putstr_yx(plane, static_cast<std::int32_t>(dimy) - 2, 0, "> ");
-            if (msg_is_error) {
-                ncplane_set_fg_rgb8(plane, 255, 10, 70);
-            } else {
-                ncplane_set_fg_rgb8(plane, 10, 255, 70);
+        if (!world.chat.empty()) {
+            for (std::int32_t i = std::min(static_cast<std::int32_t>(world.chat.size() - 1), 9); i >= 0 && i < world.chat.size(); i--) {
+                chatmsg_t &msg = world.chat[i];
+                ncplane_putstr_yx(plane, static_cast<std::int32_t>(dimy) - i - 2, 0, "> ");
+                ncplane_set_fg_rgb8(plane, msg.color.x, msg.color.y, msg.color.z);
+                ncplane_putstr(plane, msg.text.length() > max_chat_width - 3 ? (msg.text.substr(0, max_chat_width - 3) + "...").c_str() : msg.text.c_str());
+                ncplane_putchar(plane, ' ');
+                ncplane_set_fg_rgb8(plane, 255, 255, 255);
             }
-            ncplane_putstr(plane, last_msg.c_str());
-            ncplane_set_fg_rgb8(plane, 255, 255, 255);
         }
 
         notcurses_render(nc);

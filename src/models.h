@@ -3,6 +3,17 @@
 
 #include "common.h"
 
+struct rgid_t {
+    std::uint64_t n = 0;
+
+    rgid_t() {
+        static std::random_device device{};
+        static std::default_random_engine engine(device());
+        static std::uniform_int_distribution<std::uint64_t> dist;
+        n = dist(engine);
+    }
+};
+
 /* general vec3 */
 template <typename T>
 struct gvec3_t { /* NOLINT */
@@ -211,8 +222,41 @@ struct scene_t {
     std::uint64_t render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &outchar, double &applied_light, struct notcurses *nc);
 };
 
+enum bvtype_t : std::uint32_t {
+    tree, root
+};
+
+struct bv_t;
+
+union bvchild_t {
+    std::unique_ptr<bv_t> bv;
+    gobj_t *obj;
+};
+
+struct bv_t {
+    vec3_t pos, dim;
+    bvtype_t type = bvtype_t::tree; // use this to cast children
+    std::vector<bvchild_t> children; // use type to cast these
+    bool intersectbox(const line_t &line) const;
+    std::optional<std::size_t> intersect(const line_t &line, double &closest_t, struct notcurses *nc) const;
+};
+
+struct uobj_t {
+    std::string name;
+    guid_t id;
+};
+
+struct chatmsg_t {
+    std::uint64_t created_at;
+    std::string text;
+    guid_t creator;
+    rgb_t color;
+};
+
 struct world_t {
     std::vector<scene_t*> scenes;
+    std::unordered_map<guid_t, uobj_t> uobjs;
+    std::vector<chatmsg_t> chat;
 };
 
 /* allocates gobj_t */
@@ -230,5 +274,7 @@ struct intersection_t {
     bool transparent = false;
     double opacity = 0.0f;
 };
+
+
 
 #endif

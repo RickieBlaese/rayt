@@ -20,7 +20,7 @@ void partition(std::int32_t a, std::int32_t b, std::int32_t count, std::vector<s
         static_cast<std::int32_t>(std::round(y)));
 }
 
-double optional_min(std::pair<std::optional<double>, std::optional<double>> &ptimes, struct notcurses *nc) {
+double optional_min(const std::pair<std::optional<double>, std::optional<double>> &ptimes, struct notcurses *nc) {
     if (ptimes.first.has_value() && !ptimes.second.has_value()) {
         return ptimes.first.value();
     }
@@ -32,4 +32,9 @@ double optional_min(std::pair<std::optional<double>, std::optional<double>> &pti
         ERR_EXIT("pair passed with two empty optionals");
     }
     return std::min(ptimes.first.value(), ptimes.second.value());
+}
+
+guid_t generate_guid() {
+    /* + 1 to exclude the sys guid */
+    return get_random_int<uid_t>(std::numeric_limits<uid_t>::min() + 1, std::numeric_limits<uid_t>::max());
 }

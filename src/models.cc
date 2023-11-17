@@ -382,8 +382,8 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
                 const vec3_t newvec = g_reflect(line.n, *closest_obj, closest_pos, nc, normal);
                 it.c = newvec.normalized().dot(normal);
                 it.p = 1.0 / (2.0 * std::numbers::pi_v<double>);
-                it.brdf = (1.0 - it.roughness) / std::numbers::pi_v<double>;
                 it.roughness = closest_obj->roughness_texture(*closest_obj, closest_pos);
+                it.brdf = (1.0 - it.roughness) / std::numbers::pi_v<double>;
                 total_roughness += it.roughness;
 
                 line.n = newvec;
@@ -432,7 +432,7 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
     
     if (total_applied_light > 0.0) {
         total_applied_light /= static_cast<double>(samples);
-         total_color = multiplier(total_color, 1.0 / static_cast<double>(samples));
+        total_color = multiplier(total_color, 1.0 / static_cast<double>(samples));
         outchar = get_gradient(static_cast<double>(gradient.size() - 1) * total_applied_light);
         outcolor = total_color;
         applied_light = total_applied_light;
@@ -441,6 +441,53 @@ std::uint64_t scene_t::render_ray(const line_t &ray, rgb_t &outcolor, wchar_t &o
     }
 
     return total_light_bounces;
+}
+
+bool bv_t::intersectbox(const line_t &line) const {
+    if (line.n.x != 0) {
+        double t = (pos.x - line.pos.x) / line.n.x;
+        vec3_t p = line.f(t);
+        if (pos.y <= p.y && p.y <= pos.y + dim.y && pos.z <= p.z && p.z <= pos.z + dim.z) {
+            return true;
+        }
+    }
+    if (line.n.y != 0) {
+        double t = (pos.y - line.pos.y) / line.n.y;
+        vec3_t p = line.f(t);
+        if (pos.x <= p.x && p.x <= pos.x + dim.x && pos.z <= p.z && p.z <= pos.z + dim.z) {
+            return true;
+        }
+    }
+    if (line.n.z != 0) {
+        double t = (pos.z - line.pos.z) / line.n.z;
+        vec3_t p = line.f(t);
+        if (pos.y <= p.y && p.y <= pos.y + dim.y && pos.x <= p.x && p.x <= pos.x + dim.x) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<std::size_t> bv_t::intersect(const line_t &line, double &closest_t, struct notcurses *nc) const {
+    if (type == bvtype_t::tree) {
+        for (std::size_t i = 0; i < children.size(); i++) {
+            const auto &bv = children[i].bv;
+            if (bv->intersectbox(line)) {
+                return i;
+            }
+        }
+        return {};
+    }
+
+    for (std::size_t i = 0; i < children.size(); i++) {
+        const gobj_t &gobj = *children[i].obj;
+        std::pair<std::optional<double>, std::optional<double>> ptimes;
+        if (g_intersect(line, gobj, ptimes, nc)) {
+            closest_t = optional_min(ptimes, nc);
+            return i;
+        }
+    }
+    return {};
 }
 
 void add_rectprism_light(scene_t &scene, const rectprism_t &rectprism, const rgb_t &color, bool mirror, const decltype(gobj_t::strength) &strength) {
