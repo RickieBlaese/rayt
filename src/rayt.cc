@@ -714,6 +714,12 @@ int main(int argc, char **argv) {
                 goto end_input;
             } else if (cmd == "tfov") {
                 base_camera_n.z += std::strtof(args.c_str(), nullptr);
+                world.chat.push_back(chatmsg_t{
+                    .created_at = get_current_time(),
+                    .text = std::string("camera plane moved to ") + std::to_string(base_camera_n.z) + " from camera",
+                    .creator = sys_guid,
+                    .color = chat_good_color
+                });
                 goto end_input;
             } else if (cmd == "q") {
                 break;
